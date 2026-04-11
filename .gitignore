@@ -25,6 +25,7 @@ packages/
 # OpenTofu / Terraform
 **/.terraform/
 *.tfplan
+*plan.txt
 *.tfstate
 *.tfstate.*
 crash.log
