@@ -1,4 +1,4 @@
-# Staging Environment Terraform
+# Staging Environment OpenTofu
 
 ## Purpose
 
@@ -13,5 +13,5 @@ Own the Staging environment infrastructure for the Soccer Intelligence Platform.
 
 ## Promotion Relationship
 
-GitHub Actions deploys `Platform.Api` into the Terraform-created Staging slot.
+GitHub Actions deploys `Platform.Api` into the OpenTofu-created Staging slot.
 

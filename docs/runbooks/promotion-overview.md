@@ -3,7 +3,7 @@
 ## Staging
 
 Merge to `main` and let the relevant workflow deploy:
-- infra changes through Terraform workflow
+- infra changes through OpenTofu workflow
 - app changes through .NET workflow
 - Databricks changes through Databricks workflow
 - Snowflake changes through Snowflake workflow

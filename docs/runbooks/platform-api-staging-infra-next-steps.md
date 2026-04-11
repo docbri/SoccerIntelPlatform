@@ -2,16 +2,16 @@
 
 ## Purpose
 
-Track the next implementation steps for making `Platform.Api` Staging hosting real in Terraform.
+Track the next implementation steps for making `Platform.Api` Staging hosting real in OpenTofu.
 
-## Next Terraform Work
+## Next OpenTofu Work
 
 - define resource group variables
 - define App Service plan variables
 - define Linux Web App variables
 - define staging slot variables
 - add environment-specific values under `infra/terraform/env/staging`
-- connect GitHub staging deployment workflow to the Terraform-created web app and slot
+- connect GitHub staging deployment workflow to the OpenTofu-created web app and slot
 
 ## Principle
 

@@ -31,7 +31,7 @@ This step does not:
 - deploy the Worker
 - deploy Databricks assets
 - deploy Snowflake artifacts
-- replace Terraform as the infrastructure owner
+- replace OpenTofu as the infrastructure owner
 
 ## Security Model
 

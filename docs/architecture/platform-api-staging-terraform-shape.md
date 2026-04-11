@@ -1,8 +1,8 @@
-# Platform.Api Staging Terraform Shape
+# Platform.Api Staging OpenTofu Shape
 
 ## Purpose
 
-Define the first Terraform-owned Azure resource shape for real Staging deployment of `Platform.Api`.
+Define the first OpenTofu-owned Azure resource shape for real Staging deployment of `Platform.Api`.
 
 ## Target Shape
 
@@ -20,7 +20,7 @@ This is the smallest realistic Azure hosting footprint that supports:
 
 ## Scope
 
-This first Terraform slice covers:
+This first OpenTofu slice covers:
 - hosting resources for `Platform.Api`
 - Staging slot
 - non-secret application settings placeholders

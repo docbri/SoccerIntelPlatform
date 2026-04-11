@@ -19,7 +19,7 @@ Each major lane has:
 ## Lanes
 
 - .NET
-- Terraform
+- Terraform (aka. OpenTofu)
 - Databricks
 - Snowflake
 
