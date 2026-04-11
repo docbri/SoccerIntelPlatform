@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Platform.Api/Platform.Api.csproj" />
+    <Project Path="src/Platform.BronzeConsumer/Platform.BronzeConsumer.csproj" />
+    <Project Path="src/Platform.Shared/Platform.Shared.csproj" />
+    <Project Path="src/Platform.Worker/Platform.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Platform.Api.UnitTests/Platform.Api.UnitTests.csproj" />
+    <Project Path="tests/Platform.BronzeConsumer.UnitTests/Platform.BronzeConsumer.UnitTests.csproj" />
+    <Project Path="tests/Platform.Worker.UnitTests/Platform.Worker.UnitTests.csproj" />
+  </Folder>
+</Solution>

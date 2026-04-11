@@ -1,0 +1,132 @@
+name: infra-ci
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'infra/**'
+      - '.github/workflows/terraform-ci.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'infra/**'
+      - '.github/workflows/terraform-ci.yml'
+
+jobs:
+  validate-staging:
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+
+    defaults:
+      run:
+        working-directory: infra/terraform/env/staging
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+
+      - name: Azure login with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: OpenTofu fmt
+        run: tofu fmt -check -recursive ../..
+
+      - name: OpenTofu init
+        run: tofu init
+
+      - name: OpenTofu validate
+        run: tofu validate
+
+  plan-staging:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: validate-staging
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+
+    defaults:
+      run:
+        working-directory: infra/terraform/env/staging
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+
+      - name: Azure login with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: OpenTofu init
+        run: tofu init
+
+      - name: OpenTofu plan
+        run: tofu plan -out=staging.tfplan
+
+      - name: OpenTofu show plan
+        run: tofu show -no-color staging.tfplan > staging-plan.txt
+
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-tofu-plan
+          path: |
+            infra/terraform/env/staging/staging.tfplan
+            infra/terraform/env/staging/staging-plan.txt
+
+  apply-production-placeholder:
+    if: github.event_name == 'workflow_dispatch'
+    needs: validate-staging
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+
+    defaults:
+      run:
+        working-directory: infra/terraform/env/staging
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+
+      - name: Azure login with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: OpenTofu init
+        run: tofu init
+
+      - name: Production apply placeholder
+        run: echo "Placeholder: tofu apply for Production after approval."

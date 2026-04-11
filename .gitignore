@@ -1,0 +1,34 @@
+# Build outputs
+bin/
+obj/
+
+# Rider / JetBrains
+.idea/
+*.sln.iml
+
+# VS Code
+.vscode/
+
+# OS files
+.DS_Store
+
+# Logs
+*.log
+
+# Environment files
+.env
+
+# NuGet
+*.nupkg
+packages/
+
+# OpenTofu / Terraform
+**/.terraform/
+*.tfplan
+*.tfstate
+*.tfstate.*
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json

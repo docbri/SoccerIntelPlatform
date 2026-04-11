@@ -1,0 +1,154 @@
+
+OpenTofu used the selected providers to generate the following execution
+plan. Resource actions are indicated with the following symbols:
+  + create
+
+OpenTofu will perform the following actions:
+
+  # azurerm_resource_group.platform will be created
+  + resource "azurerm_resource_group" "platform" {
+      + id       = (known after apply)
+      + location = "centralus"
+      + name     = "rg-soccerintel-staging"
+    }
+
+  # module.app_service_plan.azurerm_service_plan.this will be created
+  + resource "azurerm_service_plan" "this" {
+      + id                              = (known after apply)
+      + kind                            = (known after apply)
+      + location                        = "centralus"
+      + maximum_elastic_worker_count    = (known after apply)
+      + name                            = "asp-soccerintel-staging"
+      + os_type                         = "Linux"
+      + per_site_scaling_enabled        = false
+      + premium_plan_auto_scale_enabled = false
+      + reserved                        = (known after apply)
+      + resource_group_name             = "rg-soccerintel-staging"
+      + sku_name                        = "S1"
+      + worker_count                    = (known after apply)
+    }
+
+  # module.platform_api_staging_slot.azurerm_linux_web_app_slot.this will be created
+  + resource "azurerm_linux_web_app_slot" "this" {
+      + app_metadata                                   = (known after apply)
+      + app_service_id                                 = (known after apply)
+      + app_settings                                   = {
+          + "ASPNETCORE_ENVIRONMENT" = "Staging"
+        }
+      + client_affinity_enabled                        = false
+      + client_certificate_enabled                     = false
+      + client_certificate_mode                        = "Required"
+      + custom_domain_verification_id                  = (sensitive value)
+      + default_hostname                               = (known after apply)
+      + enabled                                        = true
+      + ftp_publish_basic_authentication_enabled       = true
+      + hosting_environment_id                         = (known after apply)
+      + https_only                                     = false
+      + id                                             = (known after apply)
+      + key_vault_reference_identity_id                = (known after apply)
+      + kind                                           = (known after apply)
+      + name                                           = "staging"
+      + outbound_ip_address_list                       = (known after apply)
+      + outbound_ip_addresses                          = (known after apply)
+      + possible_outbound_ip_address_list              = (known after apply)
+      + possible_outbound_ip_addresses                 = (known after apply)
+      + public_network_access_enabled                  = true
+      + site_credential                                = (sensitive value)
+      + virtual_network_backup_restore_enabled         = false
+      + vnet_image_pull_enabled                        = false
+      + webdeploy_publish_basic_authentication_enabled = true
+      + zip_deploy_file                                = (known after apply)
+
+      + site_config {
+          + always_on                               = true
+          + container_registry_use_managed_identity = false
+          + default_documents                       = (known after apply)
+          + detailed_error_logging_enabled          = (known after apply)
+          + ftps_state                              = "Disabled"
+          + http2_enabled                           = false
+          + ip_restriction_default_action           = "Allow"
+          + linux_fx_version                        = (known after apply)
+          + load_balancing_mode                     = "LeastRequests"
+          + local_mysql_enabled                     = false
+          + managed_pipeline_mode                   = "Integrated"
+          + minimum_tls_version                     = "1.2"
+          + remote_debugging_enabled                = false
+          + remote_debugging_version                = (known after apply)
+          + scm_ip_restriction_default_action       = "Allow"
+          + scm_minimum_tls_version                 = "1.2"
+          + scm_type                                = (known after apply)
+          + scm_use_main_ip_restriction             = false
+          + use_32_bit_worker                       = true
+          + vnet_route_all_enabled                  = false
+          + websockets_enabled                      = false
+          + worker_count                            = (known after apply)
+
+          + application_stack {
+              + dotnet_version = "9.0"
+            }
+        }
+    }
+
+  # module.platform_api_web_app.azurerm_linux_web_app.this will be created
+  + resource "azurerm_linux_web_app" "this" {
+      + app_settings                                   = {
+          + "ASPNETCORE_ENVIRONMENT" = "Staging"
+        }
+      + client_affinity_enabled                        = false
+      + client_certificate_enabled                     = false
+      + client_certificate_mode                        = "Required"
+      + custom_domain_verification_id                  = (sensitive value)
+      + default_hostname                               = (known after apply)
+      + enabled                                        = true
+      + ftp_publish_basic_authentication_enabled       = true
+      + hosting_environment_id                         = (known after apply)
+      + https_only                                     = false
+      + id                                             = (known after apply)
+      + key_vault_reference_identity_id                = (known after apply)
+      + kind                                           = (known after apply)
+      + location                                       = "centralus"
+      + name                                           = "app-soccerintel-platform-api-staging"
+      + outbound_ip_address_list                       = (known after apply)
+      + outbound_ip_addresses                          = (known after apply)
+      + possible_outbound_ip_address_list              = (known after apply)
+      + possible_outbound_ip_addresses                 = (known after apply)
+      + public_network_access_enabled                  = true
+      + resource_group_name                            = "rg-soccerintel-staging"
+      + service_plan_id                                = (known after apply)
+      + site_credential                                = (sensitive value)
+      + virtual_network_backup_restore_enabled         = false
+      + vnet_image_pull_enabled                        = false
+      + webdeploy_publish_basic_authentication_enabled = true
+      + zip_deploy_file                                = (known after apply)
+
+      + site_config {
+          + always_on                               = true
+          + container_registry_use_managed_identity = false
+          + default_documents                       = (known after apply)
+          + detailed_error_logging_enabled          = (known after apply)
+          + ftps_state                              = "Disabled"
+          + http2_enabled                           = false
+          + ip_restriction_default_action           = "Allow"
+          + linux_fx_version                        = (known after apply)
+          + load_balancing_mode                     = "LeastRequests"
+          + local_mysql_enabled                     = false
+          + managed_pipeline_mode                   = "Integrated"
+          + minimum_tls_version                     = "1.2"
+          + remote_debugging_enabled                = false
+          + remote_debugging_version                = (known after apply)
+          + scm_ip_restriction_default_action       = "Allow"
+          + scm_minimum_tls_version                 = "1.2"
+          + scm_type                                = (known after apply)
+          + scm_use_main_ip_restriction             = false
+          + use_32_bit_worker                       = true
+          + vnet_route_all_enabled                  = false
+          + websockets_enabled                      = false
+          + worker_count                            = (known after apply)
+
+          + application_stack {
+              + dotnet_version = "9.0"
+            }
+        }
+    }
+
+Plan: 4 to add, 0 to change, 0 to destroy.

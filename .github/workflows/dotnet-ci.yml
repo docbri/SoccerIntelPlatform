@@ -1,0 +1,92 @@
+name: dotnet-ci
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - '.github/workflows/dotnet-ci.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - '.github/workflows/dotnet-ci.yml'
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore
+
+      - name: Test
+        run: dotnet test --no-build
+
+      - name: Publish Platform.Api
+        run: dotnet publish src/Platform.Api/Platform.Api.csproj -c Release -o ./publish/api
+
+      - name: Upload published artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: platform-api
+          path: ./publish/api
+
+  deploy-staging:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build-test
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Download published artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: platform-api
+          path: ./publish/api
+
+      - name: Azure login with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy Platform.Api to Staging slot
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ vars.AZURE_WEBAPP_NAME }}
+          slot-name: staging
+          package: ./publish/api
+
+  deploy-production-placeholder:
+    if: github.event_name == 'workflow_dispatch'
+    needs: build-test
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Production deployment placeholder
+        run: echo "Placeholder: deploy Platform.Api to Production after approval."

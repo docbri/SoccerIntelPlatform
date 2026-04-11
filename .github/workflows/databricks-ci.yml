@@ -1,0 +1,69 @@
+name: databricks-ci
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'databricks/**'
+      - '.github/workflows/databricks-ci.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'databricks/**'
+      - '.github/workflows/databricks-ci.yml'
+
+jobs:
+  validate-structure:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify bronze files exist
+        run: |
+          test -f databricks/src/bronze/README.md
+          test -f databricks/src/bronze/bronze_kafka_to_delta.py
+          test -f databricks/src/bronze/bronze_raw_ingestion_events_sql.sql
+          test -f databricks/src/bronze/bronze_raw_ingestion_quarantine_sql.sql
+
+      - name: Verify silver files exist
+        run: |
+          test -f databricks/src/silver/README.md
+          test -f databricks/src/silver/silver_league_status_events.py
+          test -f databricks/src/silver/silver_league_status_events_sql.sql
+
+      - name: Verify gold files exist
+        run: |
+          test -f databricks/src/gold/README.md
+          test -f databricks/src/gold/gold_current_league_status.py
+          test -f databricks/src/gold/gold_current_league_status_sql.sql
+
+  deploy-staging-placeholder:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: validate-structure
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Databricks staging deployment placeholder
+        run: echo "Placeholder: deploy Databricks assets to Staging workspace."
+
+  deploy-production-placeholder:
+    if: github.event_name == 'workflow_dispatch'
+    needs: validate-structure
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Databricks production deployment placeholder
+        run: echo "Placeholder: deploy Databricks assets to Production workspace after approval."
