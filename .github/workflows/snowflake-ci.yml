@@ -56,4 +56,4 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Snowflake production deployment placeholder
-        run: echo "Placeholder: deploy Snowflake artifacts to Production account/schema after approval."
+        run: 'echo "Placeholder: deploy Snowflake artifacts to Production account/schema after approval."'

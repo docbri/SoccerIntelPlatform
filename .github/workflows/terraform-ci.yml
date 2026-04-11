@@ -129,4 +129,4 @@ jobs:
         run: tofu init
 
       - name: Production apply placeholder
-        run: echo "Placeholder: tofu apply for Production after approval."
+        run: 'echo "Placeholder: tofu apply for Production after approval."'
