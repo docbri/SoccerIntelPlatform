@@ -14,6 +14,9 @@ terraform {
     storage_account_name = "soccerinteltfstate"
     container_name       = "tfstate"
     key                  = "soccerintel/staging/platform-api.tfstate"
+
+    use_azuread_auth = true
+    use_oidc         = true
   }
 }
 
