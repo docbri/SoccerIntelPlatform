@@ -1,0 +1,44 @@
+name: Promote to Production
+
+on:
+  workflow_dispatch:
+
+jobs:
+  promote-production:
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Azure login with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Swap staging slot into production
+        run: |
+          az webapp deployment slot swap \
+            --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} \
+            --name ${{ vars.AZURE_WEBAPP_NAME }} \
+            --slot staging \
+            --target-slot production
+
+      - name: Get production hostname
+        id: get-host
+        run: |
+          HOSTNAME=$(az webapp show \
+            --name ${{ vars.AZURE_WEBAPP_NAME }} \
+            --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} \
+            --query defaultHostName \
+            -o tsv)
+          echo "hostname=$HOSTNAME" >> $GITHUB_OUTPUT
+
+      - name: Smoke test production endpoint
+        run: |
+          curl -f --retry 5 --retry-delay 5 https://${{ steps.get-host.outputs.hostname }}/health
+

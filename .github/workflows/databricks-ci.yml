@@ -52,7 +52,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Databricks staging deployment placeholder
-        run: echo "Placeholder: deploy Databricks assets to Staging workspace."
+        run: 'echo "Placeholder: deploy Databricks assets to Staging workspace."'
 
   deploy-production-placeholder:
     if: github.event_name == 'workflow_dispatch'
