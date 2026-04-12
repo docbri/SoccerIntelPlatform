@@ -18,7 +18,6 @@
   <component name="ChangeListManager">
     <list default="true" id="a3f3e1e7-8b51-4d67-98d2-6d3b19370265" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.github/workflows/dotnet-ci.yml" beforeDir="false" afterPath="$PROJECT_DIR$/.github/workflows/dotnet-ci.yml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/.idea.SoccerIntelPlatform/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/.idea.SoccerIntelPlatform/.idea/workspace.xml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -153,7 +152,7 @@
       <option name="presentableId" value="Default" />
       <updated>1775701009920</updated>
       <workItem from="1775701011110" duration="1009000" />
-      <workItem from="1775756413890" duration="40968000" />
+      <workItem from="1775756413890" duration="41236000" />
     </task>
     <servers />
   </component>
