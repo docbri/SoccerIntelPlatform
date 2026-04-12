@@ -22,7 +22,18 @@ builder.Services.AddHttpClient<IApiFootballClient, ApiFootballClient>((servicePr
 });
 
 builder.Services.AddSingleton<IKafkaPublisher, KafkaPublisher>();
-builder.Services.AddHostedService<PollingWorker>();
+
+var apiFootballSection = builder.Configuration.GetSection(ApiFootballOptions.SectionName);
+var apiFootballOptions = apiFootballSection.Get<ApiFootballOptions>();
+
+if (apiFootballOptions?.Enabled == true)
+{
+    builder.Services.AddHostedService<PollingWorker>();
+}
+else
+{
+    Console.WriteLine("PollingWorker is disabled by configuration.");
+}
 
 var host = builder.Build();
 host.Run();
