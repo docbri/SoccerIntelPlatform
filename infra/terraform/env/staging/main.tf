@@ -13,7 +13,7 @@ terraform {
     resource_group_name  = "rg-soccerintel-tfstate"
     storage_account_name = "soccerinteltfstate"
     container_name       = "tfstate"
-    key                  = "soccerintel/staging/platform-api.tfstate"
+    key                  = "soccerintel/staging/platform-api-v2.tfstate"
 
     use_azuread_auth = true
     use_oidc         = true

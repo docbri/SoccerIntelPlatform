@@ -19,12 +19,8 @@
     <list default="true" id="a3f3e1e7-8b51-4d67-98d2-6d3b19370265" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.github/workflows/dotnet-ci.yml" beforeDir="false" afterPath="$PROJECT_DIR$/.github/workflows/dotnet-ci.yml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/.idea.SoccerIntelPlatform/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/.idea.SoccerIntelPlatform/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/architecture/dotnet-api-staging-deployment.md" beforeDir="false" afterPath="$PROJECT_DIR$/docs/architecture/dotnet-api-staging-deployment.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/architecture/environment-aware-workflows.md" beforeDir="false" afterPath="$PROJECT_DIR$/docs/architecture/environment-aware-workflows.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/architecture/platform-api-staging-terraform-shape.md" beforeDir="false" afterPath="$PROJECT_DIR$/docs/architecture/platform-api-staging-terraform-shape.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/runbooks/platform-api-staging-infra-next-steps.md" beforeDir="false" afterPath="$PROJECT_DIR$/docs/runbooks/platform-api-staging-infra-next-steps.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/runbooks/promotion-overview.md" beforeDir="false" afterPath="$PROJECT_DIR$/docs/runbooks/promotion-overview.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/infra/terraform/env/staging/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/infra/terraform/env/staging/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/infra/terraform/env/staging/main.tf" beforeDir="false" afterPath="$PROJECT_DIR$/infra/terraform/env/staging/main.tf" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/infra/terraform/env/staging/terraform.tfvars" beforeDir="false" afterPath="$PROJECT_DIR$/infra/terraform/env/staging/terraform.tfvars" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -159,7 +155,7 @@
       <option name="presentableId" value="Default" />
       <updated>1775701009920</updated>
       <workItem from="1775701011110" duration="1009000" />
-      <workItem from="1775756413890" duration="33888000" />
+      <workItem from="1775756413890" duration="39081000" />
     </task>
     <servers />
   </component>

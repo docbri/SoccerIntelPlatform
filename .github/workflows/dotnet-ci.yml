@@ -76,21 +76,37 @@ jobs:
           app-name: ${{ vars.AZURE_WEBAPP_NAME }}
           slot-name: staging
           package: ./publish/api
-          
+
       - name: Smoke test staging endpoint
         run: |
           curl -f --retry 5 --retry-delay 5 https://${{ vars.AZURE_WEBAPP_NAME }}-staging.azurewebsites.net/league-status/current
 
-  deploy-production-placeholder:
+  promote-production:
     if: github.event_name == 'workflow_dispatch'
     needs: build-test
     runs-on: ubuntu-latest
     environment:
       name: production
+    permissions:
+      id-token: write
+      contents: read
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Azure login with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Production deployment placeholder
-        run: 'echo "Placeholder: deploy Platform.Api to Production after approval."'
+      - name: Swap staging slot into production
+        run: |
+          az webapp deployment slot swap \
+            --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} \
+            --name ${{ vars.AZURE_WEBAPP_NAME }} \
+            --slot staging \
+            --target-slot production
+
+      - name: Smoke test production endpoint
+        run: |
+          curl -f --retry 5 --retry-delay 5 https://${{ vars.AZURE_WEBAPP_NAME }}.azurewebsites.net/league-status/current
