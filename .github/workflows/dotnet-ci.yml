@@ -79,8 +79,8 @@ jobs:
 
       - name: Smoke test staging endpoint
         run: |
-          curl -f --retry 5 --retry-delay 5 https://${{ vars.AZURE_WEBAPP_NAME }}-staging.azurewebsites.net/league-status/current
-
+          curl -f --retry 5 --retry-delay 5 https://app-soccerintel-platform-api-staging8cf3.azurewebsites.net/health
+          
   promote-production:
     if: github.event_name == 'workflow_dispatch'
     needs: build-test
