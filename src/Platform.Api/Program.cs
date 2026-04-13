@@ -25,3 +25,5 @@ app.MapConfigurationEndpoints();
 app.MapLeagueStatusEndpoints();
 
 app.Run();
+
+public partial class Program { }
