@@ -18,7 +18,19 @@ builder.Services.AddHttpClient<DatabricksStatementExecutionSqlClient>();
 builder.Services.AddSingleton<IDatabricksSqlClient, StubDatabricksSqlClient>();
 builder.Services.AddSingleton<ILeagueStatusReadService, LeagueStatusReadService>();
 
+builder.Services.AddOpenApi();
+
 var app = builder.Build();
+
+if (app.Environment.IsDevelopment())
+{
+    app.MapOpenApi();
+
+    app.UseSwaggerUI(options =>
+    {
+        options.SwaggerEndpoint("/openapi/v1.json", "Platform.Api v1");
+    });
+}
 
 app.MapHealthEndpoints();
 app.MapConfigurationEndpoints();
