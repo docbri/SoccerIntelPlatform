@@ -6,9 +6,12 @@ public sealed class DatabricksSqlOptions
 
     public string WorkspaceUrl { get; set; } = string.Empty;
     public string WarehouseId { get; set; } = string.Empty;
-    public string Catalog { get; set; } = "gold";
-    public string Schema { get; set; } = "default";
+
+    // Unity Catalog namespace (Section A contract)
+    public string Catalog { get; set; } = string.Empty;
+    public string Schema { get; set; } = "gold";
+    public string CurrentLeagueStatusObjectName { get; set; } = "current_league_status";
+
     public string AuthenticationType { get; set; } = "Stub";
     public string AccessToken { get; set; } = string.Empty;
 }
-

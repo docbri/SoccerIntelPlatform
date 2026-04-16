@@ -1,11 +1,16 @@
+using Microsoft.Extensions.Options;
 using Platform.Api.Contracts;
 using Platform.Api.Infrastructure.Databricks;
+using Platform.Api.Options;
 
 namespace Platform.Api.Services;
 
 public sealed class LeagueStatusReadService(
-    IDatabricksSqlClient databricksSqlClient) : ILeagueStatusReadService
+    IDatabricksSqlClient databricksSqlClient,
+    IOptions<DatabricksSqlOptions> options) : ILeagueStatusReadService
 {
+    private readonly DatabricksSqlOptions _options = options.Value;
+
     public async Task<IReadOnlyList<CurrentLeagueStatusResponse>> GetCurrentStatusesAsync(
         int? leagueId,
         int? season,
@@ -18,7 +23,7 @@ public sealed class LeagueStatusReadService(
         return rows.Select(MapRow).ToList();
     }
 
-    private static string BuildSql(int? leagueId, int? season)
+    private string BuildSql(int? leagueId, int? season)
     {
         var conditions = new List<string>();
 
@@ -36,9 +41,12 @@ public sealed class LeagueStatusReadService(
             ? $" WHERE {string.Join(" AND ", conditions)}"
             : string.Empty;
 
+        var fullyQualifiedTable =
+            $"{_options.Catalog}.{_options.Schema}.{_options.CurrentLeagueStatusObjectName}";
+
         return
             "SELECT league_id, league_name, season, status_category, api_status, api_warning, latest_fetched_at_utc, latest_ingested_at_utc " +
-            "FROM gold.current_league_status" +
+            $"FROM {fullyQualifiedTable}" +
             whereClause;
     }
 
@@ -57,4 +65,3 @@ public sealed class LeagueStatusReadService(
         };
     }
 }
-

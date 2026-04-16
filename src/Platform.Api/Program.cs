@@ -5,6 +5,7 @@ using Platform.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Options
 builder.Services
     .AddOptions<SourceOptions>()
     .Bind(builder.Configuration.GetSection(SourceOptions.SectionName));
@@ -13,9 +14,22 @@ builder.Services
     .AddOptions<DatabricksSqlOptions>()
     .Bind(builder.Configuration.GetSection(DatabricksSqlOptions.SectionName));
 
+// Http client for real Databricks SQL client
 builder.Services.AddHttpClient<DatabricksStatementExecutionSqlClient>();
 
-builder.Services.AddSingleton<IDatabricksSqlClient, StubDatabricksSqlClient>();
+// Conditional SQL client registration (Section H ready, Section A compatible)
+builder.Services.AddSingleton<IDatabricksSqlClient>(sp =>
+{
+    var options = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<DatabricksSqlOptions>>().Value;
+
+    return options.AuthenticationType switch
+    {
+        "Stub" => new StubDatabricksSqlClient(),
+        _ => sp.GetRequiredService<DatabricksStatementExecutionSqlClient>()
+    };
+});
+
+// Services
 builder.Services.AddSingleton<ILeagueStatusReadService, LeagueStatusReadService>();
 
 builder.Services.AddOpenApi();
