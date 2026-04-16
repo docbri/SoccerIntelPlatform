@@ -9,7 +9,7 @@ Track the steps required to turn Azure Blob Storage remote state on for the Stag
 - [x] Create `rg-soccerintel-tfstate`
 - [x] Create storage account `soccerinteltfstate`
 - [x] Create private container `tfstate`
-- [x] Confirm backend key path: `soccerintel/staging/platform-api.tfstate`
+- [x] Confirm backend key path: `soccerintel/staging/platform-api-v2.tfstate`
 - [x] Run `tofu init -reconfigure` in `infra/terraform/env/staging`
 - [x] Confirm state is created in Azure Blob Storage
 

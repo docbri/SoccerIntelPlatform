@@ -18,7 +18,7 @@ Describe the Azure storage resources required before OpenTofu can use remote sta
 
 ## Example State Key
 
-- `soccerintel/staging/platform-api.tfstate`
+- `soccerintel/staging/platform-api-v2.tfstate`
 
 ## Notes
 

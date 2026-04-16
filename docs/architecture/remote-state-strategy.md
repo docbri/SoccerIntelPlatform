@@ -13,7 +13,7 @@ Use Azure Blob Storage through the `azurerm` backend.
 - resource group: `rg-soccerintel-tfstate`
 - storage account: `soccerinteltfstate`
 - container: `tfstate`
-- key: `soccerintel/staging/platform-api.tfstate`
+- key: `soccerintel/staging/platform-api-v2.tfstate`
 
 ## Principles
 
