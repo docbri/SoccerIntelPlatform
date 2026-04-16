@@ -33,6 +33,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.MapHealthEndpoints();
+app.MapReadinessEndpoints();
 app.MapConfigurationEndpoints();
 app.MapLeagueStatusEndpoints();
 
