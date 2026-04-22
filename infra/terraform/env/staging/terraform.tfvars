@@ -10,7 +10,7 @@ databricks_access_connector_name          = "ac-soccerintel-staging"
 databricks_managed_storage_account_name   = "stsoccerinteldbstg"
 databricks_managed_storage_container_name = "unity-catalog"
 
-databricks_catalog_name       = "staging_soccerintel"
+databricks_catalog_name       = "soccerintel_staging"
 databricks_bronze_schema_name = "bronze"
 databricks_silver_schema_name = "silver"
 databricks_gold_schema_name   = "gold"
