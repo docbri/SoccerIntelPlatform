@@ -1,4 +1,3 @@
-
 terraform {
   required_version = ">= 1.7.0"
 
@@ -61,3 +60,73 @@ module "platform_api_staging_slot" {
   }
 }
 
+module "databricks_foundation" {
+  source = "../../modules/azure-databricks-foundation"
+
+  workspace_name                 = var.databricks_workspace_name
+  workspace_sku                  = var.databricks_workspace_sku
+  access_connector_name          = var.databricks_access_connector_name
+  managed_storage_account_name   = var.databricks_managed_storage_account_name
+  managed_storage_container_name = var.databricks_managed_storage_container_name
+  resource_group_name            = azurerm_resource_group.platform.name
+  location                       = var.databricks_location
+
+  tags = {
+    environment = "staging"
+    platform    = "soccerintel"
+    managed_by  = "opentofu"
+    workload    = "databricks-foundation"
+  }
+}
+
+output "databricks_workspace_id" {
+  value = module.databricks_foundation.workspace_id
+}
+
+output "databricks_workspace_name" {
+  value = module.databricks_foundation.workspace_name
+}
+
+output "databricks_workspace_url" {
+  value = module.databricks_foundation.workspace_url
+}
+
+output "databricks_access_connector_id" {
+  value = module.databricks_foundation.access_connector_id
+}
+
+output "databricks_access_connector_principal_id" {
+  value = module.databricks_foundation.access_connector_principal_id
+}
+
+output "databricks_managed_storage_account_id" {
+  value = module.databricks_foundation.managed_storage_account_id
+}
+
+output "databricks_managed_storage_account_name" {
+  value = module.databricks_foundation.managed_storage_account_name
+}
+
+output "databricks_managed_storage_container_name" {
+  value = module.databricks_foundation.managed_storage_container_name
+}
+
+output "databricks_managed_storage_url" {
+  value = module.databricks_foundation.managed_storage_url
+}
+
+output "databricks_catalog_name" {
+  value = var.databricks_catalog_name
+}
+
+output "databricks_bronze_schema_name" {
+  value = var.databricks_bronze_schema_name
+}
+
+output "databricks_silver_schema_name" {
+  value = var.databricks_silver_schema_name
+}
+
+output "databricks_gold_schema_name" {
+  value = var.databricks_gold_schema_name
+}
