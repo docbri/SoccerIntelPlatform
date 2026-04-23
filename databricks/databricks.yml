@@ -1,0 +1,33 @@
+bundle:
+  name: soccerintel-platform
+
+include:
+  - resources/*.yml
+
+variables:
+  catalog:
+    description: Unity Catalog name
+  bronze_schema:
+    description: Bronze schema name
+  silver_schema:
+    description: Silver schema name
+  gold_schema:
+    description: Gold schema name
+  workspace_root:
+    description: Workspace root path for bundle deployment
+
+targets:
+  staging:
+    mode: development
+    default: true
+
+    workspace:
+      root_path: ${var.workspace_root}
+
+    variables:
+      catalog: soccerintel_staging
+      bronze_schema: bronze
+      silver_schema: silver
+      gold_schema: gold
+      workspace_root: /Workspace/Users/drbrianmyers@outlook.com/soccerintel
+      
