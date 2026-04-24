@@ -28,6 +28,13 @@ resources:
           job_cluster_key: medallion_cluster
           spark_python_task:
             python_file: ../src/silver/silver_league_status_events.py
+            parameters:
+              - "--catalog"
+              - ${var.catalog}
+              - "--bronze_schema"
+              - ${var.bronze_schema}
+              - "--silver_schema"
+              - ${var.silver_schema}
 
         - task_key: gold
           depends_on:
@@ -35,4 +42,11 @@ resources:
           job_cluster_key: medallion_cluster
           spark_python_task:
             python_file: ../src/gold/gold_current_league_status.py
+            parameters:
+              - "--catalog"
+              - ${var.catalog}
+              - "--silver_schema"
+              - ${var.silver_schema}
+              - "--gold_schema"
+              - ${var.gold_schema}
             
