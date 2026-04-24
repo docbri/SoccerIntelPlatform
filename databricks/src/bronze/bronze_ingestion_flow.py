@@ -1,32 +1,69 @@
-# Bronze ingestion flow placeholder
-#
-# Intended future behavior:
-# 1. Read Kafka topic(s) containing JSON serialized IngestionEnvelope records
-# 2. Preserve Kafka metadata
-# 3. Parse outer envelope fields
-# 4. Add ingestion metadata
-# 5. Append valid rows to bronze.raw_ingestion_events
-# 6. Append malformed or invalid rows to bronze.raw_ingestion_quarantine
+import sys
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import current_timestamp, to_date, lit
 
+spark = SparkSession.builder.getOrCreate()
 
-def describe_bronze_ingestion_flow():
-    return {
-        "source": "kafka",
-        "topic_pattern": "soccer.raw.ingestion*",
-        "valid_target_table": "bronze.raw_ingestion_events",
-        "quarantine_target_table": "bronze.raw_ingestion_quarantine",
-        "mode": "streaming append",
-        "rules": [
-            "Preserve kafka metadata",
-            "Preserve raw message json",
-            "Preserve payload_json as text",
-            "Append valid rows to Bronze",
-            "Append invalid rows to quarantine",
-            "Do not normalize football semantics in Bronze"
-        ]
+# --- Read parameters from job ---
+args = sys.argv
+
+catalog = args[args.index("--catalog") + 1]
+schema = args[args.index("--bronze_schema") + 1]
+
+accepted_table = f"{catalog}.{schema}.raw_ingestion_events"
+quarantine_table = f"{catalog}.{schema}.raw_ingestion_quarantine"
+
+# --- Simulated ingestion dataset (controlled test input) ---
+data = [
+    {
+        "schema_version": "1.0",
+        "source": "api-football",
+        "entity_type": "league-status",
+        "request_key": "req-1",
+        "correlation_id": "corr-1",
+        "source_entity_id": "123",
+
+        "league_id": "39",
+        "league_name": "Premier League",
+        "season": "2024",
+        "endpoint": "/leagues",
+
+        "payload_json": '{"status": "active"}',
+        "raw_message_json": '{"raw": "message"}',
+
+        "idempotency_key": "abc-123",
+        "ingestion_status": "accepted",
+        "quarantined": False
+    },
+    {
+        # malformed → quarantine
+        "payload_json": None,
+        "raw_message_json": '{"bad": "data"}'
     }
+]
 
+df = spark.createDataFrame(data)
 
-if __name__ == "__main__":
-    print(describe_bronze_ingestion_flow())
+# --- Split accepted vs quarantine ---
+accepted_df = (
+    df.filter("payload_json IS NOT NULL")
+    .withColumn("ingested_at_utc", current_timestamp())
+    .withColumn("event_date", to_date(current_timestamp()))
+    .withColumn("kafka_topic", lit("soccer.raw.ingestion.test"))
+    .withColumn("kafka_partition", lit(0))
+    .withColumn("kafka_offset", lit(0))
+)
 
+quarantine_df = (
+    df.filter("payload_json IS NULL")
+    .withColumn("quarantine_reason", lit("missing payload_json"))
+    .withColumn("quarantine_stage", lit("bronze_parse"))
+    .withColumn("ingested_at_utc", current_timestamp())
+    .withColumn("event_date", to_date(current_timestamp()))
+)
+
+# --- Write to Unity Catalog tables ---
+accepted_df.write.mode("append").saveAsTable(accepted_table)
+quarantine_df.write.mode("append").saveAsTable(quarantine_table)
+
+print("BRONZE INGESTION COMPLETE")
