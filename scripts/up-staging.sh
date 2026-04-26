@@ -19,12 +19,17 @@ echo "Resolving Databricks workspace URL..."
 DATABRICKS_HOST="https://$(tofu output -raw databricks_workspace_url)"
 
 echo "Authenticating Databricks CLI..."
+
+# Login (creates/updates profile)
 databricks auth login --host "${DATABRICKS_HOST}"
 
 # Derive profile name exactly how CLI does
 DATABRICKS_PROFILE="$(echo "${DATABRICKS_HOST}" | sed 's|https://||' | cut -d'.' -f1)"
 
 echo "Using Databricks profile: ${DATABRICKS_PROFILE}"
+
+echo "Setting this profile as DEFAULT..."
+databricks auth switch -p "${DATABRICKS_PROFILE}"
 
 echo "Verifying Unity Catalog..."
 

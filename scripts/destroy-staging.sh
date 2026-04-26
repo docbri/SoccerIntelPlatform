@@ -49,7 +49,7 @@ PROFILES=$(databricks auth profiles 2>/dev/null | tail -n +2 | awk '{print $1}')
 
 if [ -n "${PROFILES}" ]; then
   for profile in ${PROFILES}; do
-    yes | databricks auth logout -p "${profile}" --delete >/dev/null 2>&1 || true
+    databricks auth logout -p "${profile}" --delete --auto-approve || true
   done
 fi
 
