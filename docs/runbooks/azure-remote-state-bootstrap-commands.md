@@ -9,7 +9,7 @@ Create the Azure resources required for OpenTofu remote state before enabling th
 - resource group: `rg-soccerintel-tfstate`
 - storage account: `soccerinteltfstate`
 - container: `tfstate`
-- region: `centralus`
+- region: `eastus2`
 
 ## Azure CLI Commands
 
@@ -17,5 +17,5 @@ Create the Azure resources required for OpenTofu remote state before enabling th
 ```bash
 az group create \
   --name rg-soccerintel-tfstate \
-  --location centralus
+  --location eastus2
 
