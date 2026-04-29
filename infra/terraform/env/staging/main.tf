@@ -53,6 +53,15 @@ module "platform_api_staging_slot" {
   }
 }
 
+module "redpanda_vm" {
+  source = "../../modules/redpanda-vm"
+
+  resource_group_name = azurerm_resource_group.platform.name
+  location            = azurerm_resource_group.platform.location
+
+  ssh_public_key_path = pathexpand("~/.ssh/id_rsa.pub")
+}
+
 module "databricks_foundation" {
   source = "../../modules/azure-databricks-foundation"
 
