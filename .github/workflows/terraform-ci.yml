@@ -6,12 +6,14 @@ on:
     paths:
       - 'infra/**'
       - '.github/workflows/terraform-ci.yml'
+      - 'scripts/**'
   push:
     branches:
       - main
     paths:
       - 'infra/**'
       - '.github/workflows/terraform-ci.yml'
+      - 'scripts/**'
 
 jobs:
   validate-staging:

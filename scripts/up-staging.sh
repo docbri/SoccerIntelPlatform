@@ -108,6 +108,24 @@ ensure_ssh_key_for_apply() {
   echo "SSH public key available at: ${SSH_PUBLIC_KEY}"
 }
 
+configure_databricks_host_for_plan() {
+  echo "Configuring Databricks host for plan diagnostics..."
+
+  local workspace_url
+  workspace_url="$(tofu output -raw databricks_workspace_url 2>/dev/null || true)"
+
+  if [[ -z "${workspace_url}" ]]; then
+    echo "No databricks_workspace_url output found. Skipping DATABRICKS_HOST export."
+    return 0
+  fi
+
+  export DATABRICKS_HOST="https://${workspace_url}"
+  export DATABRICKS_AUTH_TYPE="azure-cli"
+
+  echo "DATABRICKS_HOST configured from OpenTofu output."
+  echo "DATABRICKS_AUTH_TYPE configured as azure-cli."
+}
+
 diagnose_databricks_auth() {
   echo "Diagnosing Databricks authentication for OpenTofu..."
 
@@ -141,6 +159,7 @@ tofu init -reconfigure
 if [[ "${MODE}" == "plan" ]]; then
   ensure_ssh_public_key_for_plan
 
+  configure_databricks_host_for_plan
   diagnose_databricks_auth
 
   echo "Planning infrastructure..."
