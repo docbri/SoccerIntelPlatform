@@ -79,14 +79,9 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: OpenTofu init
-        run: tofu init
-
-      - name: OpenTofu plan
-        run: tofu plan -out=staging.tfplan
-
-      - name: OpenTofu show plan
-        run: tofu show -no-color staging.tfplan > staging-plan.txt
+      - name: Run staging infrastructure plan
+        working-directory: .
+        run: ./scripts/up-staging.sh plan
 
       - name: Upload plan artifact
         uses: actions/upload-artifact@v4
