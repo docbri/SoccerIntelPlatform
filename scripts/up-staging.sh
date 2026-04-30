@@ -108,6 +108,28 @@ ensure_ssh_key_for_apply() {
   echo "SSH public key available at: ${SSH_PUBLIC_KEY}"
 }
 
+diagnose_databricks_auth() {
+  echo "Diagnosing Databricks authentication for OpenTofu..."
+
+  if ! command -v databricks >/dev/null 2>&1; then
+    echo "Databricks CLI is not installed; skipping Databricks identity diagnostic."
+    return 0
+  fi
+
+  if [[ -z "${DATABRICKS_HOST:-}" ]]; then
+    echo "DATABRICKS_HOST is not set in the shell."
+    echo "OpenTofu provider host is configured from module.databricks_foundation.workspace_url."
+  else
+    echo "DATABRICKS_HOST is set."
+  fi
+
+  echo "Attempting Databricks current-user lookup..."
+  databricks current-user me || true
+
+  echo "Attempting Databricks storage credential lookup..."
+  databricks storage-credentials get soccerintel-staging-credential || true
+}
+
 echo "Repo root: ${REPO_ROOT}"
 echo "Staging OpenTofu directory: ${STAGING_DIR}"
 
@@ -118,6 +140,8 @@ tofu init -reconfigure
 
 if [[ "${MODE}" == "plan" ]]; then
   ensure_ssh_public_key_for_plan
+
+  diagnose_databricks_auth
 
   echo "Planning infrastructure..."
   tofu plan -out=staging.tfplan
