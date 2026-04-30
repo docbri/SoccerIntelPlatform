@@ -27,14 +27,71 @@ SSH_DIR="${HOME}/.ssh"
 SSH_PRIVATE_KEY="${SSH_DIR}/id_rsa"
 SSH_PUBLIC_KEY="${SSH_PRIVATE_KEY}.pub"
 
-ensure_ssh_key() {
-  echo "Ensuring SSH key exists for Redpanda VM planning/apply..."
+REDPANDA_VM_STATE_ADDRESS="module.redpanda_vm.azurerm_linux_virtual_machine.this"
 
+ensure_ssh_dir() {
   mkdir -p "${SSH_DIR}"
   chmod 700 "${SSH_DIR}"
+}
+
+redpanda_public_key_from_state() {
+  tofu state show -no-color "${REDPANDA_VM_STATE_ADDRESS}" 2>/dev/null \
+    | awk -F' = ' '
+        $1 ~ /^[[:space:]]*public_key$/ {
+          gsub(/^"/, "", $2)
+          gsub(/"$/, "", $2)
+          print $2
+          exit
+        }
+      '
+}
+
+ensure_ssh_public_key_for_plan() {
+  echo "Ensuring SSH public key exists for Redpanda VM planning..."
+
+  ensure_ssh_dir
+
+  local state_public_key
+  state_public_key="$(redpanda_public_key_from_state || true)"
+
+  if [[ -n "${state_public_key}" ]]; then
+    echo "Using Redpanda SSH public key from OpenTofu state to avoid artificial VM replacement during plan."
+    printf '%s\n' "${state_public_key}" > "${SSH_PUBLIC_KEY}"
+    chmod 644 "${SSH_PUBLIC_KEY}"
+    echo "SSH public key available at: ${SSH_PUBLIC_KEY}"
+    return
+  fi
+
+  if [[ -f "${SSH_PUBLIC_KEY}" ]]; then
+    echo "Using existing SSH public key at: ${SSH_PUBLIC_KEY}"
+    chmod 644 "${SSH_PUBLIC_KEY}"
+    return
+  fi
+
+  echo "No Redpanda VM key found in state and no local SSH public key exists."
+  echo "Creating a temporary key pair for first-time planning at ${SSH_PRIVATE_KEY}..."
+
+  ssh-keygen \
+    -t rsa \
+    -b 4096 \
+    -f "${SSH_PRIVATE_KEY}" \
+    -N "" \
+    -C "soccerintel-staging"
+
+  chmod 600 "${SSH_PRIVATE_KEY}"
+  chmod 644 "${SSH_PUBLIC_KEY}"
+
+  echo "SSH public key available at: ${SSH_PUBLIC_KEY}"
+}
+
+ensure_ssh_key_for_apply() {
+  echo "Ensuring SSH key pair exists for Redpanda VM apply..."
+
+  ensure_ssh_dir
 
   if [[ ! -f "${SSH_PRIVATE_KEY}" || ! -f "${SSH_PUBLIC_KEY}" ]]; then
     echo "SSH key pair not found. Creating one at ${SSH_PRIVATE_KEY}..."
+
     ssh-keygen \
       -t rsa \
       -b 4096 \
@@ -54,14 +111,14 @@ ensure_ssh_key() {
 echo "Repo root: ${REPO_ROOT}"
 echo "Staging OpenTofu directory: ${STAGING_DIR}"
 
-ensure_ssh_key
-
 cd "${STAGING_DIR}"
 
 echo "Initializing..."
 tofu init -reconfigure
 
 if [[ "${MODE}" == "plan" ]]; then
+  ensure_ssh_public_key_for_plan
+
   echo "Planning infrastructure..."
   tofu plan -out=staging.tfplan
 
@@ -71,6 +128,8 @@ if [[ "${MODE}" == "plan" ]]; then
   echo "Staging infrastructure plan complete."
   exit 0
 fi
+
+ensure_ssh_key_for_apply
 
 echo "Applying infrastructure..."
 tofu apply -auto-approve
