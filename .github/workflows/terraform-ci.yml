@@ -92,4 +92,3 @@ jobs:
           path: |
             infra/terraform/env/staging/staging.tfplan
             infra/terraform/env/staging/staging-plan.txt
-            
