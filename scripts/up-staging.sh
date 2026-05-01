@@ -29,6 +29,16 @@ SSH_PUBLIC_KEY="${SSH_PRIVATE_KEY}.pub"
 
 REDPANDA_VM_STATE_ADDRESS="module.redpanda_vm.azurerm_linux_virtual_machine.this"
 
+DATABRICKS_CATALOG="${DATABRICKS_CATALOG:-soccerintel_staging}"
+DATABRICKS_BRONZE_SCHEMA="${DATABRICKS_BRONZE_SCHEMA:-bronze}"
+DATABRICKS_SILVER_SCHEMA="${DATABRICKS_SILVER_SCHEMA:-silver}"
+DATABRICKS_GOLD_SCHEMA="${DATABRICKS_GOLD_SCHEMA:-gold}"
+
+# CI supplies AZURE_CLIENT_ID through the GitHub staging environment.
+# Locally, this may be unset. In that case, apply still verifies Databricks
+# but skips grant mutation instead of asking the user to paste IDs.
+DATABRICKS_GRANT_PRINCIPAL="${DATABRICKS_GRANT_PRINCIPAL:-${AZURE_CLIENT_ID:-}}"
+
 ensure_ssh_dir() {
   mkdir -p "${SSH_DIR}"
   chmod 700 "${SSH_DIR}"
@@ -108,6 +118,85 @@ ensure_ssh_key_for_apply() {
   echo "SSH public key available at: ${SSH_PUBLIC_KEY}"
 }
 
+require_command() {
+  local command_name="$1"
+
+  if ! command -v "${command_name}" >/dev/null 2>&1; then
+    echo "ERROR: Required command not found: ${command_name}" >&2
+    exit 1
+  fi
+}
+
+databricks_grants_update() {
+  local securable_type="$1"
+  local full_name="$2"
+  local principal="$3"
+  shift 3
+
+  local privileges_json
+  local privilege
+  local separator=""
+
+  privileges_json="["
+  for privilege in "$@"; do
+    privileges_json="${privileges_json}${separator}\"${privilege}\""
+    separator=", "
+  done
+  privileges_json="${privileges_json}]"
+
+  echo "Granting ${privileges_json} on ${securable_type} ${full_name} to ${principal}"
+
+  databricks grants update "${securable_type}" "${full_name}" \
+    --json "{\"changes\":[{\"add\":${privileges_json},\"principal\":\"${principal}\"}]}" \
+    >/dev/null
+}
+
+apply_databricks_ci_grants() {
+  if [[ -z "${DATABRICKS_GRANT_PRINCIPAL}" ]]; then
+    echo "WARNING: DATABRICKS_GRANT_PRINCIPAL/AZURE_CLIENT_ID is not set."
+    echo "Skipping Databricks CI grants for local apply."
+    echo "CI should provide AZURE_CLIENT_ID through the GitHub staging environment."
+    return
+  fi
+
+  echo "Applying Databricks Unity Catalog grants for principal: ${DATABRICKS_GRANT_PRINCIPAL}"
+
+  databricks_grants_update \
+    catalog \
+    "${DATABRICKS_CATALOG}" \
+    "${DATABRICKS_GRANT_PRINCIPAL}" \
+    USE_CATALOG
+
+  databricks_grants_update \
+    schema \
+    "${DATABRICKS_CATALOG}.${DATABRICKS_BRONZE_SCHEMA}" \
+    "${DATABRICKS_GRANT_PRINCIPAL}" \
+    USE_SCHEMA
+
+  databricks_grants_update \
+    schema \
+    "${DATABRICKS_CATALOG}.${DATABRICKS_SILVER_SCHEMA}" \
+    "${DATABRICKS_GRANT_PRINCIPAL}" \
+    USE_SCHEMA
+
+  databricks_grants_update \
+    schema \
+    "${DATABRICKS_CATALOG}.${DATABRICKS_GOLD_SCHEMA}" \
+    "${DATABRICKS_GRANT_PRINCIPAL}" \
+    USE_SCHEMA
+
+  echo "Databricks Unity Catalog grants applied."
+}
+
+verify_databricks_unity_catalog() {
+  echo "Verifying Unity Catalog..."
+
+  databricks catalogs get "${DATABRICKS_CATALOG}" >/dev/null
+  databricks schemas get "${DATABRICKS_CATALOG}.${DATABRICKS_BRONZE_SCHEMA}" >/dev/null
+  databricks schemas get "${DATABRICKS_CATALOG}.${DATABRICKS_SILVER_SCHEMA}" >/dev/null
+  databricks schemas get "${DATABRICKS_CATALOG}.${DATABRICKS_GOLD_SCHEMA}" >/dev/null
+}
+
 echo "Repo root: ${REPO_ROOT}"
 echo "Staging OpenTofu directory: ${STAGING_DIR}"
 
@@ -135,24 +224,13 @@ echo "Applying infrastructure..."
 tofu apply -auto-approve
 
 echo "Resolving Databricks workspace URL..."
-DATABRICKS_HOST="https://$(tofu output -raw databricks_workspace_url)"
+export DATABRICKS_HOST="https://$(tofu output -raw databricks_workspace_url)"
+echo "Using Databricks host from OpenTofu output: ${DATABRICKS_HOST}"
 
-echo "Authenticating Databricks CLI..."
+echo "Verifying Databricks CLI authentication..."
+databricks catalogs get "${DATABRICKS_CATALOG}" >/dev/null
 
-# Login creates/updates profile.
-databricks auth login --host "${DATABRICKS_HOST}"
-
-# Derive profile name exactly how CLI does.
-DATABRICKS_PROFILE="$(echo "${DATABRICKS_HOST}" | sed 's|https://||' | cut -d'.' -f1)"
-
-echo "Using Databricks profile: ${DATABRICKS_PROFILE}"
-
-echo "Setting this profile as DEFAULT..."
-databricks auth switch -p "${DATABRICKS_PROFILE}"
-
-echo "Verifying Unity Catalog..."
-
-databricks catalogs list -p "${DATABRICKS_PROFILE}"
-databricks schemas list soccerintel_staging -p "${DATABRICKS_PROFILE}"
+apply_databricks_ci_grants
+verify_databricks_unity_catalog
 
 echo "Staging infrastructure is up and verified."
