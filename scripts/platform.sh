@@ -8,8 +8,17 @@ DATABRICKS_DIR="${ROOT_DIR}/databricks"
 TARGET="${DATABRICKS_TARGET:-staging}"
 BUNDLE_JOB="${DATABRICKS_BUNDLE_JOB:-medallion-slice}"
 
+DATABRICKS_CATALOG="${DATABRICKS_CATALOG:-soccerintel_staging}"
+DATABRICKS_BRONZE_SCHEMA="${DATABRICKS_BRONZE_SCHEMA:-bronze}"
+DATABRICKS_SILVER_SCHEMA="${DATABRICKS_SILVER_SCHEMA:-silver}"
+DATABRICKS_GOLD_SCHEMA="${DATABRICKS_GOLD_SCHEMA:-gold}"
+
+BRONZE_RAW_INGESTION_EVENTS_TABLE="${BRONZE_RAW_INGESTION_EVENTS_TABLE:-raw_ingestion_events}"
+SILVER_LEAGUE_STATUS_EVENTS_TABLE="${SILVER_LEAGUE_STATUS_EVENTS_TABLE:-league_status_events}"
+GOLD_CURRENT_LEAGUE_STATUS_TABLE="${GOLD_CURRENT_LEAGUE_STATUS_TABLE:-current_league_status}"
+
 usage() {
-  cat <<EOF
+  cat <<EOF_USAGE
 Usage:
   ./scripts/platform.sh plan
   ./scripts/platform.sh up
@@ -18,9 +27,16 @@ Usage:
   ./scripts/platform.sh resume
 
 Environment overrides:
-  DATABRICKS_TARGET       Default: staging
-  DATABRICKS_BUNDLE_JOB   Default: medallion-slice
-EOF
+  DATABRICKS_TARGET                         Default: staging
+  DATABRICKS_BUNDLE_JOB                     Default: medallion-slice
+  DATABRICKS_CATALOG                        Default: soccerintel_staging
+  DATABRICKS_BRONZE_SCHEMA                  Default: bronze
+  DATABRICKS_SILVER_SCHEMA                  Default: silver
+  DATABRICKS_GOLD_SCHEMA                    Default: gold
+  BRONZE_RAW_INGESTION_EVENTS_TABLE         Default: raw_ingestion_events
+  SILVER_LEAGUE_STATUS_EVENTS_TABLE         Default: league_status_events
+  GOLD_CURRENT_LEAGUE_STATUS_TABLE          Default: current_league_status
+EOF_USAGE
 }
 
 require_command() {
@@ -111,6 +127,57 @@ run_databricks_bundle_destroy() {
   )
 }
 
+verify_databricks_catalog() {
+  local catalog_name="$1"
+
+  echo "Verifying Databricks catalog: ${catalog_name}"
+  databricks catalogs get "${catalog_name}" >/dev/null
+}
+
+verify_databricks_schema() {
+  local catalog_name="$1"
+  local schema_name="$2"
+  local full_schema_name="${catalog_name}.${schema_name}"
+
+  echo "Verifying Databricks schema: ${full_schema_name}"
+  databricks schemas get "${full_schema_name}" >/dev/null
+}
+
+verify_databricks_table() {
+  local catalog_name="$1"
+  local schema_name="$2"
+  local table_name="$3"
+  local full_table_name="${catalog_name}.${schema_name}.${table_name}"
+
+  echo "Verifying Databricks table: ${full_table_name}"
+  databricks tables get "${full_table_name}" >/dev/null
+}
+
+verify_databricks_unity_catalog_objects() {
+  require_command databricks
+
+  verify_databricks_catalog "${DATABRICKS_CATALOG}"
+
+  verify_databricks_schema "${DATABRICKS_CATALOG}" "${DATABRICKS_BRONZE_SCHEMA}"
+  verify_databricks_schema "${DATABRICKS_CATALOG}" "${DATABRICKS_SILVER_SCHEMA}"
+  verify_databricks_schema "${DATABRICKS_CATALOG}" "${DATABRICKS_GOLD_SCHEMA}"
+
+  verify_databricks_table \
+    "${DATABRICKS_CATALOG}" \
+    "${DATABRICKS_BRONZE_SCHEMA}" \
+    "${BRONZE_RAW_INGESTION_EVENTS_TABLE}"
+
+  verify_databricks_table \
+    "${DATABRICKS_CATALOG}" \
+    "${DATABRICKS_SILVER_SCHEMA}" \
+    "${SILVER_LEAGUE_STATUS_EVENTS_TABLE}"
+
+  verify_databricks_table \
+    "${DATABRICKS_CATALOG}" \
+    "${DATABRICKS_GOLD_SCHEMA}" \
+    "${GOLD_CURRENT_LEAGUE_STATUS_TABLE}"
+}
+
 plan_platform() {
   require_file "${SCRIPTS_DIR}/up-staging.sh"
 
@@ -155,6 +222,7 @@ verify_platform() {
   require_dir "${DATABRICKS_DIR}"
 
   run_databricks_bundle_validate
+  verify_databricks_unity_catalog_objects
 
   echo "Platform verification completed."
 }
@@ -200,4 +268,3 @@ main() {
 }
 
 main "$@"
-
