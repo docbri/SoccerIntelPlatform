@@ -95,12 +95,33 @@ It should not:
 - run Databricks jobs
 - mutate Databricks grants
 - create or switch Databricks CLI profiles
+- perform platform verification beyond plan-safe checks
 
 If any of those behaviors are needed, use a different lifecycle command such as:
 
     ./scripts/platform.sh up
     ./scripts/platform.sh resume
+    ./scripts/platform.sh verify
     ./scripts/platform.sh down
+
+## Relationship to Platform Verification
+
+`./scripts/platform.sh plan` proves the proposed infrastructure state.
+
+`./scripts/platform.sh verify` proves the currently deployed platform shape.
+
+Current verification includes:
+
+- Azure CLI authentication
+- Azure resource group
+- Azure App Service
+- Azure App Service staging slot
+- Redpanda VM
+- Redpanda public IP
+- Databricks bundle validation
+- Unity Catalog catalog, schemas, and medallion tables
+
+Keep these concerns separate. Do not add Azure or Databricks runtime verification to the plan path.
 
 ## Expected Successful Result
 

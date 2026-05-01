@@ -2,9 +2,9 @@
 
 ## Purpose
 
-Capture the current staging environment requirements for Azure, GitHub Actions, Databricks, and Unity Catalog.
+Capture the current staging environment requirements for Azure, GitHub Actions, Databricks, Unity Catalog, and the platform lifecycle scripts.
 
-This document describes what must exist for `infra-ci` and the staging platform lifecycle scripts to work.
+This document describes what must exist for `infra-ci` and the staging platform lifecycle commands to work.
 
 ## Public Operational Entry Point
 
@@ -87,6 +87,20 @@ The remote state backend uses:
 - Storage account: `soccerinteltfstate`
 - Blob container: `tfstate`
 
+## Azure Platform Resources
+
+The current staging platform verification expects these Azure resources:
+
+- Resource group: `rg-soccerintel-platform`
+- App Service: `app-soccerintel-platform-api`
+- App Service slot: `app-soccerintel-platform-api/staging`
+- Redpanda VM: `vm-redpanda-staging`
+- Redpanda public IP: `pip-redpanda`
+
+These checks are performed by:
+
+    ./scripts/platform.sh verify
+
 ## Databricks Workspace Access
 
 The GitHub Actions staging identity must exist in Azure Databricks and be assigned to the staging workspace.
@@ -100,6 +114,14 @@ Staging workspace:
 - `adb-soccerintel-staging`
 
 This identity is used by `infra-ci` when OpenTofu refreshes Databricks Unity Catalog resources during `plan-staging`.
+
+## Databricks Authentication Model
+
+The platform lifecycle scripts do not create or switch Databricks CLI profiles during normal lifecycle commands.
+
+For local execution, the scripts use the current Databricks CLI authentication context with the staging workspace host resolved from OpenTofu output.
+
+For CI execution, GitHub Actions provides Azure identity through the `staging` environment secrets.
 
 ## Databricks Unity Catalog Access
 
@@ -186,6 +208,23 @@ Expected project-managed objects:
 - Storage credential: `soccerintel-staging-credential`
 
 Databricks-managed objects whose names begin with `adb_` are expected and should not be deleted manually.
+
+## Platform Verification
+
+Current platform verification is performed with:
+
+    ./scripts/platform.sh verify
+
+It checks:
+
+- Azure CLI authentication
+- Azure resource group
+- Azure App Service
+- Azure App Service staging slot
+- Redpanda VM
+- Redpanda public IP
+- Databricks bundle validation
+- Unity Catalog catalog, schemas, and medallion tables
 
 ## Known Remaining Gap
 
