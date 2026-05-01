@@ -4,6 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRIPTS_DIR="${ROOT_DIR}/scripts"
 DATABRICKS_DIR="${ROOT_DIR}/databricks"
+STAGING_DIR="${ROOT_DIR}/infra/terraform/env/staging"
+STAGING_TFVARS="${STAGING_DIR}/terraform.tfvars"
 
 TARGET="${DATABRICKS_TARGET:-staging}"
 BUNDLE_JOB="${DATABRICKS_BUNDLE_JOB:-medallion-slice}"
@@ -16,6 +18,10 @@ DATABRICKS_GOLD_SCHEMA="${DATABRICKS_GOLD_SCHEMA:-gold}"
 BRONZE_RAW_INGESTION_EVENTS_TABLE="${BRONZE_RAW_INGESTION_EVENTS_TABLE:-raw_ingestion_events}"
 SILVER_LEAGUE_STATUS_EVENTS_TABLE="${SILVER_LEAGUE_STATUS_EVENTS_TABLE:-league_status_events}"
 GOLD_CURRENT_LEAGUE_STATUS_TABLE="${GOLD_CURRENT_LEAGUE_STATUS_TABLE:-current_league_status}"
+
+WEB_APP_SLOT="${WEB_APP_SLOT:-staging}"
+REDPANDA_VM_NAME="${REDPANDA_VM_NAME:-vm-redpanda-staging}"
+REDPANDA_PUBLIC_IP_NAME="${REDPANDA_PUBLIC_IP_NAME:-pip-redpanda}"
 
 usage() {
   cat <<EOF_USAGE
@@ -36,6 +42,11 @@ Environment overrides:
   BRONZE_RAW_INGESTION_EVENTS_TABLE         Default: raw_ingestion_events
   SILVER_LEAGUE_STATUS_EVENTS_TABLE         Default: league_status_events
   GOLD_CURRENT_LEAGUE_STATUS_TABLE          Default: current_league_status
+  AZURE_RESOURCE_GROUP                      Default: terraform.tfvars resource_group_name
+  AZURE_WEBAPP_NAME                         Default: terraform.tfvars web_app_name
+  WEB_APP_SLOT                              Default: staging
+  REDPANDA_VM_NAME                          Default: vm-redpanda-staging
+  REDPANDA_PUBLIC_IP_NAME                   Default: pip-redpanda
 EOF_USAGE
 }
 
@@ -64,6 +75,42 @@ require_dir() {
     echo "ERROR: Required directory not found: ${dir_path}" >&2
     exit 1
   fi
+}
+
+read_tofu_var() {
+  local var_name="$1"
+
+  require_file "${STAGING_TFVARS}"
+
+  awk -F'=' -v key="${var_name}" '
+    $1 ~ "^[[:space:]]*" key "[[:space:]]*$" {
+      value = $2
+      sub(/^[[:space:]]+/, "", value)
+      sub(/[[:space:]]+$/, "", value)
+      gsub(/^"/, "", value)
+      gsub(/"$/, "", value)
+      print value
+      exit
+    }
+  ' "${STAGING_TFVARS}"
+}
+
+azure_resource_group() {
+  if [[ -n "${AZURE_RESOURCE_GROUP:-}" ]]; then
+    printf '%s\n' "${AZURE_RESOURCE_GROUP}"
+    return
+  fi
+
+  read_tofu_var "resource_group_name"
+}
+
+azure_webapp_name() {
+  if [[ -n "${AZURE_WEBAPP_NAME:-}" ]]; then
+    printf '%s\n' "${AZURE_WEBAPP_NAME}"
+    return
+  fi
+
+  read_tofu_var "web_app_name"
 }
 
 run_databricks_bundle_validate() {
@@ -125,6 +172,112 @@ run_databricks_bundle_destroy() {
     echo "WARNING: Databricks bundle destroy failed or is unsupported in this context." >&2
     echo "Continuing teardown so local/platform cleanup can proceed." >&2
   )
+}
+
+verify_azure_login() {
+  require_command az
+
+  echo "Verifying Azure CLI authentication..."
+  az account show >/dev/null
+}
+
+verify_azure_resource_group() {
+  local resource_group_name="$1"
+
+  echo "Verifying Azure resource group: ${resource_group_name}"
+  az group show \
+    --name "${resource_group_name}" \
+    --query name \
+    --output tsv \
+    >/dev/null
+}
+
+verify_azure_webapp() {
+  local resource_group_name="$1"
+  local webapp_name="$2"
+
+  echo "Verifying Azure App Service: ${webapp_name}"
+  az webapp show \
+    --resource-group "${resource_group_name}" \
+    --name "${webapp_name}" \
+    --query name \
+    --output tsv \
+    >/dev/null
+}
+
+verify_azure_webapp_slot() {
+  local resource_group_name="$1"
+  local webapp_name="$2"
+  local slot_name="$3"
+  local resolved_slot_name
+
+  echo "Verifying Azure App Service slot: ${webapp_name}/${slot_name}"
+
+  resolved_slot_name="$(
+    az webapp deployment slot list \
+      --resource-group "${resource_group_name}" \
+      --name "${webapp_name}" \
+      --query "[?name=='${slot_name}'].name | [0]" \
+      --output tsv
+  )"
+
+  if [[ "${resolved_slot_name}" != "${slot_name}" ]]; then
+    echo "ERROR: Azure App Service slot not found: ${webapp_name}/${slot_name}" >&2
+    exit 1
+  fi
+}
+
+verify_azure_vm() {
+  local resource_group_name="$1"
+  local vm_name="$2"
+
+  echo "Verifying Azure VM: ${vm_name}"
+  az vm show \
+    --resource-group "${resource_group_name}" \
+    --name "${vm_name}" \
+    --query name \
+    --output tsv \
+    >/dev/null
+}
+
+verify_azure_public_ip() {
+  local resource_group_name="$1"
+  local public_ip_name="$2"
+
+  echo "Verifying Azure public IP: ${public_ip_name}"
+  az network public-ip show \
+    --resource-group "${resource_group_name}" \
+    --name "${public_ip_name}" \
+    --query name \
+    --output tsv \
+    >/dev/null
+}
+
+verify_azure_platform_objects() {
+  local resource_group_name
+  local webapp_name
+
+  resource_group_name="$(azure_resource_group)"
+  webapp_name="$(azure_webapp_name)"
+
+  if [[ -z "${resource_group_name}" ]]; then
+    echo "ERROR: Could not resolve Azure resource group." >&2
+    echo "Set AZURE_RESOURCE_GROUP or define resource_group_name in ${STAGING_TFVARS}." >&2
+    exit 1
+  fi
+
+  if [[ -z "${webapp_name}" ]]; then
+    echo "ERROR: Could not resolve Azure App Service name." >&2
+    echo "Set AZURE_WEBAPP_NAME or define web_app_name in ${STAGING_TFVARS}." >&2
+    exit 1
+  fi
+
+  verify_azure_login
+  verify_azure_resource_group "${resource_group_name}"
+  verify_azure_webapp "${resource_group_name}" "${webapp_name}"
+  verify_azure_webapp_slot "${resource_group_name}" "${webapp_name}" "${WEB_APP_SLOT}"
+  verify_azure_vm "${resource_group_name}" "${REDPANDA_VM_NAME}"
+  verify_azure_public_ip "${resource_group_name}" "${REDPANDA_PUBLIC_IP_NAME}"
 }
 
 verify_databricks_catalog() {
@@ -217,6 +370,8 @@ down_platform() {
 
 verify_platform() {
   echo "Verifying platform..."
+
+  verify_azure_platform_objects
 
   require_command databricks
   require_dir "${DATABRICKS_DIR}"
