@@ -1,14 +1,16 @@
-# Platform Bring-Up (Staging)
+# Platform Operations (Staging)
 
 ## Purpose
 
-Describe how to bring up, verify, resume, plan, tear down, and explicitly reset the SoccerIntelPlatform staging platform from source control.
+Describe how to plan, bring up, verify, resume, operate ingestion, tear down, and explicitly reset the SoccerIntelPlatform staging platform from source control.
 
 The public operational entry point is:
 
     ./scripts/platform.sh
 
 Lower-level scripts such as `scripts/up-staging.sh`, `scripts/up-redpanda.sh`, `scripts/destroy-staging.sh`, `scripts/destroy-redpanda.sh`, and `scripts/deploy-platform-api.sh` are implementation details. Operators should use `platform.sh` unless they are intentionally debugging one subordinate script.
+
+---
 
 ## Operational Model
 
@@ -18,6 +20,10 @@ The current staging lifecycle is:
     ./scripts/platform.sh up
     ./scripts/platform.sh resume
     ./scripts/platform.sh verify
+    ./scripts/platform.sh ingest once
+    ./scripts/platform.sh ingest poll --pph 1
+    ./scripts/platform.sh ingest status
+    ./scripts/platform.sh ingest stop
     ./scripts/platform.sh down
     ./scripts/platform.sh reset
 
@@ -27,8 +33,20 @@ Meaning:
 - `up` reconciles staging infrastructure, authenticates Databricks for the current workspace, deploys Platform.Api to the staging slot, brings up Redpanda, deploys/runs the Databricks bundle, and verifies the platform.
 - `resume` does not recreate infrastructure. It redeploys/runs Databricks bundle resources and verifies the platform after idle runtime timeout.
 - `verify` validates Azure platform resources, Platform.Api `/health`, the Databricks bundle, and the expected Unity Catalog medallion objects.
+- `ingest once` runs one controlled Platform.Worker ingestion pass and publishes to Azure Redpanda.
+- `ingest poll --pph <n>` starts Platform.Worker in background polling mode, using a bounded polls-per-hour setting.
+- `ingest status` reports whether background ingestion polling is running and shows recent worker logs.
+- `ingest stop` stops background ingestion polling without tearing down the platform.
 - `down` performs ordinary teardown of bundle resources, Redpanda, and staging infrastructure.
 - `reset` is an explicitly destructive staging reset. It requires `CONFIRM_DESTRUCTIVE_RESET=destroy-staging-data`, delegates to the teardown path, and relies on `destroy-staging.sh` to perform project catalog and Unity Catalog storage cleanup before OpenTofu destroy.
+
+Important operational rule:
+
+    ./scripts/platform.sh up
+
+brings up the platform, but it does not start continuous Soccer API polling.  API-consuming ingestion must be started explicitly with `ingest once` or `ingest poll`.
+
+---
 
 ## Prerequisites
 
@@ -40,6 +58,7 @@ Required local tools:
 - .NET SDK
 - zip
 - Git
+- `nc` / netcat
 
 Required access:
 
@@ -47,6 +66,9 @@ Required access:
 - Storage Blob Data Contributor access to the OpenTofu remote state backend after bootstrap
 - Azure App Service deployment access for Platform.Api
 - Databricks workspace access for the operator running Databricks bundle and Unity Catalog verification commands
+- Network access from the operator machine to the Redpanda VM public endpoint on port `9092`
+
+---
 
 ## 1. Authenticate to Azure
 
@@ -55,11 +77,13 @@ Run from any directory:
     az login
     az account set --subscription "Azure subscription 1"
 
+---
+
 ## 2. Confirm Databricks CLI authentication
 
 The staging apply path resolves the Databricks workspace URL from OpenTofu output after infrastructure apply.
 
-When a workspace is rebuilt, the workspace URL can change. The apply script authenticates the Databricks CLI for the current workspace and switches the default Databricks profile to the profile for that workspace before running Databricks catalog, grant, or verification commands.
+When a workspace is rebuilt, the workspace URL can change.  The apply script authenticates the Databricks CLI for the current workspace and switches the default Databricks profile to the profile for that workspace before running Databricks catalog, grant, or verification commands.
 
 The staging workspace host can be inspected from OpenTofu output after infrastructure exists:
 
@@ -74,7 +98,9 @@ If this fails during normal use, run:
 
     ./scripts/platform.sh up
 
-The apply path will authenticate the current Databricks workspace. Do not manually edit Databricks profile files.
+The apply path will authenticate the current Databricks workspace.  Do not manually edit Databricks profile files.
+
+---
 
 ## 3. Bootstrap OpenTofu remote state
 
@@ -90,6 +116,8 @@ This creates the remote state foundation:
 - Storage account: `soccerinteltfstate`
 - Blob container: `tfstate`
 
+---
+
 ## 4. Plan staging infrastructure
 
 Run from the repository root:
@@ -101,7 +129,9 @@ This delegates to the staging OpenTofu planning path and generates:
 - `infra/terraform/env/staging/staging.tfplan`
 - `infra/terraform/env/staging/staging-plan.txt`
 
-The plan path is intentionally non-mutating. It should not deploy Databricks bundles, run jobs, apply grants, deploy Platform.Api, or recreate runtime services.
+The plan path is intentionally non-mutating.  It should not deploy Databricks bundles, run jobs, apply grants, deploy Platform.Api, start ingestion, or recreate runtime services.
+
+---
 
 ## 5. Bring up the staging platform
 
@@ -138,6 +168,12 @@ Expected successful task output includes:
     SILVER TRANSFORMATION COMPLETE
     GOLD TRANSFORMATION COMPLETE
 
+Important:
+
+`up` does not start Soccer API polling.  This protects the API-Football daily call budget.
+
+---
+
 ## 6. Resume Databricks runtime work after idle timeout
 
 Run from the repository root:
@@ -146,7 +182,7 @@ Run from the repository root:
 
 Use `resume` when durable infrastructure already exists but the Databricks runtime path needs to be made usable again.
 
-The current bundle uses job-cluster behavior, so `resume` does not start a long-lived all-purpose cluster. Instead, it:
+The current bundle uses job-cluster behavior, so `resume` does not start a long-lived all-purpose cluster.  Instead, it:
 
 - Validates the Databricks bundle using the current workspace profile.
 - Deploys the Databricks bundle using the current workspace profile.
@@ -154,6 +190,8 @@ The current bundle uses job-cluster behavior, so `resume` does not start a long-
 - Verifies Azure platform resources, Platform.Api `/health`, catalog, schemas, and tables.
 
 Use `resume` instead of `up` when the platform exists and the goal is to re-run or re-wake the Databricks job path.
+
+---
 
 ## 7. Verify platform state
 
@@ -185,7 +223,160 @@ Expected successful verification ends with:
 
     Platform verification completed.
 
-## 8. Tear down staging
+---
+
+## 8. Controlled ingestion operations
+
+The ingestion commands run `Platform.Worker` from the local machine and publish to the Azure Redpanda VM.
+
+By default, the script resolves the Azure Redpanda public IP from:
+
+- Resource group: resolved from `infra/terraform/env/staging/terraform.tfvars`, unless `AZURE_RESOURCE_GROUP` is set
+- Public IP resource: `pip-redpanda`
+- Port: `9092`
+
+The script verifies TCP connectivity before starting the worker.
+
+### Run one controlled ingestion pass
+
+Run:
+
+    ./scripts/platform.sh ingest once
+
+This command:
+
+- Resolves the Azure Redpanda public endpoint.
+- Verifies TCP connectivity to Redpanda on port `9092`.
+- Runs `src/Platform.Worker/Platform.Worker.csproj` once.
+- Publishes one ingestion pass to the Kafka topic configured for the worker.
+- Exits after the controlled pass completes.
+
+Expected successful output includes:
+
+    TCP connectivity verified: <redpanda-ip>:9092
+    Running one controlled ingestion pass.
+    Kafka bootstrap server: <redpanda-ip>:9092
+    Published envelope to Kafka topic soccer.raw.ingestion.dev
+
+### Start background polling
+
+Run:
+
+    ./scripts/platform.sh ingest poll --pph 1
+
+This command starts Platform.Worker in background polling mode.
+
+The `--pph` value means polls per hour.  For example:
+
+- `--pph 1` means one poll per hour.
+- `--pph 2` means two polls per hour.
+- `--pph 4` means four polls per hour.
+
+The script converts this value into `--poll-interval-seconds` before calling the worker.
+
+With the default daily API-Football call ceiling of `100`, `--pph 4` is the normal maximum because:
+
+    4 polls/hour × 24 hours = 96 polls/day
+
+The script rejects unsafe values.  For example:
+
+    ./scripts/platform.sh ingest poll --pph 5
+
+fails because:
+
+    5 polls/hour × 24 hours = 120 polls/day
+
+which exceeds the default daily maximum of `100`.
+
+### Check ingestion status
+
+Run:
+
+    ./scripts/platform.sh ingest status
+
+This command reports:
+
+- Whether background ingestion polling is running.
+- The stored worker process ID, if present.
+- The most recent polling configuration from `.runtime/platform-ingest.env`.
+- The tail of `.runtime/platform-worker.log`, if present.
+
+### Stop background polling
+
+Run:
+
+    ./scripts/platform.sh ingest stop
+
+This command stops the background polling process without tearing down Redpanda, Databricks, Platform.Api, or staging infrastructure.
+
+Use this when polling is no longer needed so the worker does not continue consuming API-Football calls.
+
+### Override the Redpanda bootstrap server
+
+The default ingestion path publishes to Azure Redpanda.
+
+For a one-off override, pass:
+
+    ./scripts/platform.sh ingest once --bootstrap-server localhost:9092
+
+or:
+
+    ./scripts/platform.sh ingest poll --pph 1 --bootstrap-server localhost:9092
+
+For an environment-level override, set:
+
+    REDPANDA_BOOTSTRAP_SERVER=localhost:9092 ./scripts/platform.sh ingest once
+
+Use overrides deliberately.  The normal staging path should publish to the Azure Redpanda VM.
+
+---
+
+## 9. API-Football daily call budget
+
+The API-Football license currently allows a maximum of `100` calls per day.
+
+The default script value is:
+
+    API_FOOTBALL_MAX_CALLS_PER_DAY=100
+
+The default polling frequency is:
+
+    INGEST_DEFAULT_POLLS_PER_HOUR=1
+
+The worker stores the API call ledger at:
+
+    localdata/api-football-call-ledger.json
+
+The script passes this path explicitly through:
+
+    API_FOOTBALL_CALL_LEDGER_PATH
+
+so the ledger is written at the repository root rather than under `src/Platform.Worker` or `src/Platform.Worker/bin`.
+
+When the API key is missing or is a development placeholder, the worker publishes a synthetic warning envelope and does not reserve daily API quota.
+
+Expected placeholder-key output includes:
+
+    API-Football API key is not configured with a real value.
+    The worker will publish synthetic warning envelopes and will not reserve daily API quota.
+
+A placeholder-key run should not create `api-football-call-ledger.json`.
+
+When a real API key is configured, each actual API-Football call is guarded by the ledger.  If the daily max is reached, the worker skips additional calls for that UTC day.
+
+To inspect the ledger:
+
+    find . -name 'api-football-call-ledger.json' -print -exec cat {} \;
+
+To remove accidental local ledgers during development:
+
+    find . -name 'api-football-call-ledger.json' -delete
+
+Do not delete the ledger casually when using a real API key, because it exists to protect the daily API call budget.
+
+---
+
+## 10. Tear down staging
 
 Run from the repository root:
 
@@ -212,7 +403,9 @@ The staging destroy path performs project Unity Catalog cleanup before OpenTofu 
 
 Do not call subordinate destroy scripts directly unless intentionally debugging a specific layer.
 
-## 9. Destructive staging reset
+---
+
+## 11. Destructive staging reset
 
 Use this only when intentionally preparing for a full rebuild rehearsal.
 
@@ -220,9 +413,11 @@ Run from the repository root:
 
     CONFIRM_DESTRUCTIVE_RESET=destroy-staging-data ./scripts/platform.sh reset
 
-This command is intentionally guarded. Running `./scripts/platform.sh reset` without `CONFIRM_DESTRUCTIVE_RESET=destroy-staging-data` fails without deleting data.
+This command is intentionally guarded.  Running `./scripts/platform.sh reset` without `CONFIRM_DESTRUCTIVE_RESET=destroy-staging-data` fails without deleting data.
 
-The reset path delegates to the ordinary teardown path after confirmation. The destructive behavior is the project catalog and Unity Catalog storage cleanup performed by `destroy-staging.sh`.
+The reset path delegates to the ordinary teardown path after confirmation.  The destructive behavior is the project catalog and Unity Catalog storage cleanup performed by `destroy-staging.sh`.
+
+---
 
 ## Redpanda SSH Key Note
 
@@ -230,11 +425,13 @@ The Redpanda VM module expects an SSH public key at:
 
     ~/.ssh/id_rsa.pub
 
-In `plan` mode, the staging script avoids generating a new SSH key when the Redpanda VM already exists. It reads the existing Redpanda public key from OpenTofu state and writes it to the expected public key path.
+In `plan` mode, the staging script avoids generating a new SSH key when the Redpanda VM already exists.  It reads the existing Redpanda public key from OpenTofu state and writes it to the expected public key path.
 
 This prevents `tofu plan` from forcing an unnecessary Redpanda VM replacement due to an artificial SSH key change.
 
 In `apply` mode, the staging script ensures an SSH key pair exists before applying infrastructure.
+
+---
 
 ## Databricks Unity Catalog Grant Note
 
@@ -252,6 +449,8 @@ The grants currently applied for the CI principal are:
 - `USE SCHEMA` on `soccerintel_staging.gold`
 
 Storage credential and external location grant automation is handled through the staging destroy path during teardown/reset, not through manual table deletion in `platform.sh`.
+
+---
 
 ## Platform.Api Deployment Note
 
@@ -273,18 +472,55 @@ A successful deployment is verified by:
 
     https://app-soccerintel-platform-api-staging.azurewebsites.net/health
 
+---
+
+## Current Bronze Limitation
+
+The current staging medallion bundle still uses a hard-coded Bronze ingestion flow.
+
+The operational ingestion path now publishes messages to Azure Redpanda, but the Databricks Bronze path is not yet fully sourced from that Redpanda topic.
+
+Current operational state:
+
+    Platform.Worker
+        → Azure Redpanda topic soccer.raw.ingestion.dev
+
+Next target state:
+
+    Platform.Worker
+        → Azure Redpanda topic soccer.raw.ingestion.dev
+        → Bronze ingestion
+        → soccerintel_staging.bronze.raw_ingestion_events
+        → Silver transformation
+        → Gold current_league_status
+
+Until the Redpanda-to-Bronze path is implemented, the Databricks Bronze job output should be treated as a smoke-test/medallion-shape validation path rather than proof that live Redpanda messages are populating Bronze.
+
+---
+
 ## Success Criteria
 
 The staging platform is considered up when:
 
-- `./scripts/platform.sh up` completes successfully
-- Azure platform resource verification passes
-- Platform.Api is deployed to the staging slot
-- The Platform.Api staging `/health` endpoint returns HTTP 200
-- The Databricks bundle job terminates successfully
-- Bronze, Silver, and Gold tasks complete
-- `./scripts/platform.sh verify` completes successfully
+- `./scripts/platform.sh up` completes successfully.
+- Azure platform resource verification passes.
+- Platform.Api is deployed to the staging slot.
+- The Platform.Api staging `/health` endpoint returns HTTP 200.
+- Redpanda VM exists and has a public IP.
+- The Databricks bundle job terminates successfully.
+- Bronze, Silver, and Gold tasks complete.
+- `./scripts/platform.sh verify` completes successfully.
 - The expected medallion tables exist:
   - `soccerintel_staging.bronze.raw_ingestion_events`
   - `soccerintel_staging.silver.league_status_events`
   - `soccerintel_staging.gold.current_league_status`
+
+The staging ingestion control plane is considered operational when:
+
+- `./scripts/platform.sh ingest once` resolves the Azure Redpanda public IP.
+- `./scripts/platform.sh ingest once` verifies TCP connectivity to Redpanda on port `9092`.
+- `./scripts/platform.sh ingest once` publishes an envelope to `soccer.raw.ingestion.dev`.
+- `./scripts/platform.sh ingest poll --pph 1` starts background polling.
+- `./scripts/platform.sh ingest status` reports the running worker process and recent logs.
+- `./scripts/platform.sh ingest stop` stops the worker without tearing down the platform.
+- Placeholder-key ingestion runs do not create or increment the API call ledger.
