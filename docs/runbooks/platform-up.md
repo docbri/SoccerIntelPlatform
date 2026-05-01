@@ -25,7 +25,7 @@ Meaning:
 - `plan` generates a non-mutating staging OpenTofu plan.
 - `up` reconciles staging infrastructure, Redpanda, Databricks bundle resources, the medallion job, and verification.
 - `resume` does not recreate infrastructure. It redeploys/runs Databricks bundle resources and verifies the platform after idle runtime timeout.
-- `verify` validates the Databricks bundle and confirms the expected Unity Catalog medallion objects exist.
+- `verify` validates Azure platform resources, the Databricks bundle, and the expected Unity Catalog medallion objects.
 - `down` tears down bundle resources, Redpanda, and staging infrastructure.
 
 ## Prerequisites
@@ -111,7 +111,7 @@ It performs the following high-level sequence:
 - Validates the Databricks bundle.
 - Deploys the Databricks bundle.
 - Runs the medallion bundle job.
-- Verifies Databricks catalog, schemas, and medallion tables.
+- Verifies Azure platform resources, Databricks catalog, schemas, and medallion tables.
 
 The Databricks bundle job currently runs:
 
@@ -138,7 +138,7 @@ The current bundle uses job-cluster behavior, so `resume` does not start a long-
 - Validates the Databricks bundle.
 - Deploys the bundle.
 - Runs the medallion slice job.
-- Verifies catalog, schemas, and tables.
+- Verifies Azure platform resources, catalog, schemas, and tables.
 
 Use `resume` instead of `up` when the platform exists and the goal is to re-run or re-wake the Databricks job path.
 
@@ -150,6 +150,12 @@ Run from the repository root:
 
 Current verification checks:
 
+- Azure CLI authentication
+- Azure resource group: `rg-soccerintel-platform`
+- Azure App Service: `app-soccerintel-platform-api`
+- Azure App Service slot: `app-soccerintel-platform-api/staging`
+- Redpanda VM: `vm-redpanda-staging`
+- Redpanda public IP: `pip-redpanda`
 - Databricks bundle validation
 - Catalog: `soccerintel_staging`
 - Schemas:
@@ -215,6 +221,7 @@ Storage credential and external location grant automation should only be added i
 The staging platform is considered up when:
 
 - `./scripts/platform.sh up` completes successfully
+- Azure platform resource verification passes
 - The Databricks bundle job terminates successfully
 - Bronze, Silver, and Gold tasks complete
 - `./scripts/platform.sh verify` completes successfully
