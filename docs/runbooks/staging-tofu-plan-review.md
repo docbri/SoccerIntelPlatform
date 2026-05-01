@@ -6,10 +6,11 @@ Describe how the Staging infrastructure plan is generated and reviewed in CI.
 
 ## Current Workflow Behavior
 
-On push to `main` for infrastructure changes:
+On push to `main` for infrastructure changes, or on manual workflow dispatch:
+
 - validate the Staging environment root
 - initialize against Azure Blob remote state
-- run `tofu plan`
+- run the staging infrastructure plan through `scripts/up-staging.sh plan`
 - upload both:
   - `staging.tfplan`
   - `staging-plan.txt`
@@ -17,15 +18,18 @@ On push to `main` for infrastructure changes:
 ## Artifact Meaning
 
 ### `staging.tfplan`
+
 Machine-readable OpenTofu plan output.
 
 ### `staging-plan.txt`
+
 Human-readable plan summary for review.
 
-## Review Principle
+## Script Boundary
 
-Infrastructure changes should be reviewed as a plan before apply is introduced.
+The workflow remains a thin runner.
 
-## Backend Note
+Staging infrastructure plan behavior lives in:
 
-The workflow now uses the real Azure Blob remote state backend for the Staging environment.
+```text
+scripts/up-staging.sh

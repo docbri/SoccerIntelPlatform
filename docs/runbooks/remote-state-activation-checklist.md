@@ -12,12 +12,9 @@ Track the steps required to turn Azure Blob Storage remote state on for the Stag
 - [x] Confirm backend key path: `soccerintel/staging/platform-api-v2.tfstate`
 - [x] Run `tofu init -reconfigure` in `infra/terraform/env/staging`
 - [x] Confirm state is created in Azure Blob Storage
-
-## Remaining Steps
-
-- [ ] Update GitHub Actions workflow to initialize against the real backend
-- [ ] Verify CI can access remote state successfully
-- [ ] Treat remote backend as authoritative for shared Staging planning
+- [x] Update GitHub Actions workflow to initialize against the real backend
+- [x] Verify CI can access remote state successfully
+- [x] Treat remote backend as authoritative for shared Staging planning
 
 ## Principle
 
@@ -25,7 +22,15 @@ Remote state is activated only after backend storage exists and has been verifie
 
 ## Current Status
 
-Local environment is using remote state.
+Local development and CI/CD both initialize and plan using the shared Azure Blob remote state backend.
 
-Next milestone: CI/CD successfully initializes and plans using the same backend.
+The `infra-ci` workflow is green for:
 
+- `validate-staging`
+- `plan-staging`
+
+## Notes
+
+The remote backend is now authoritative for shared Staging infrastructure planning.
+
+OpenTofu plan refresh depends on both Azure RBAC and Databricks Unity Catalog permissions because the Staging state includes Azure resources and Databricks Unity Catalog resources.
