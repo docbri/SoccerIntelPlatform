@@ -154,6 +154,7 @@ Current verification checks:
 - Azure resource group: `rg-soccerintel-platform`
 - Azure App Service: `app-soccerintel-platform-api`
 - Azure App Service slot: `app-soccerintel-platform-api/staging`
+- Platform.Api staging health endpoint: `https://app-soccerintel-platform-api-staging.azurewebsites.net/health`
 - Redpanda VM: `vm-redpanda-staging`
 - Redpanda public IP: `pip-redpanda`
 - Databricks bundle validation
@@ -229,3 +230,4 @@ The staging platform is considered up when:
   - `soccerintel_staging.bronze.raw_ingestion_events`
   - `soccerintel_staging.silver.league_status_events`
   - `soccerintel_staging.gold.current_league_status`
+- The Platform.Api staging `/health` endpoint returns HTTP 200

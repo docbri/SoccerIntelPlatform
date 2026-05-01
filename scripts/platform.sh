@@ -210,6 +210,7 @@ verify_azure_webapp_slot() {
   local webapp_name="$2"
   local slot_name="$3"
   local resolved_slot_name
+  local default_hostname
 
   echo "Verifying Azure App Service slot: ${webapp_name}/${slot_name}"
 
@@ -225,6 +226,29 @@ verify_azure_webapp_slot() {
     echo "ERROR: Azure App Service slot not found: ${webapp_name}/${slot_name}" >&2
     exit 1
   fi
+
+  default_hostname="$(
+    az webapp deployment slot list \
+      --resource-group "${resource_group_name}" \
+      --name "${webapp_name}" \
+      --query "[?name=='${slot_name}'].defaultHostName | [0]" \
+      --output tsv
+  )"
+
+  if [[ -z "${default_hostname}" ]]; then
+    echo "ERROR: Could not resolve default hostname for slot: ${webapp_name}/${slot_name}" >&2
+    exit 1
+  fi
+
+  echo "Verifying Platform.Api health endpoint: https://${default_hostname}/health"
+
+  curl \
+    --fail \
+    --silent \
+    --show-error \
+    --location \
+    "https://${default_hostname}/health" \
+    >/dev/null
 }
 
 verify_azure_vm() {
