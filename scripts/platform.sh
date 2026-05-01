@@ -242,14 +242,25 @@ verify_azure_webapp_slot() {
   fi
 
   echo "Verifying Platform.Api health endpoint: https://${default_hostname}/health"
-
-  curl \
-    --fail \
-    --silent \
-    --show-error \
-    --location \
-    "https://${default_hostname}/health" \
-    >/dev/null
+  
+  for attempt in {1..12}; do
+    if curl \
+      --fail \
+      --silent \
+      --show-error \
+      --location \
+      "https://${default_hostname}/health" \
+      >/dev/null; then
+      echo "Platform.Api health endpoint is healthy."
+      return
+    fi
+  
+    echo "Platform.Api health endpoint not ready yet. Retry ${attempt}/12..."
+    sleep 5
+  done
+  
+  echo "ERROR: Platform.Api health endpoint did not become healthy: https://${default_hostname}/health" >&2
+  exit 1
 }
 
 verify_azure_vm() {

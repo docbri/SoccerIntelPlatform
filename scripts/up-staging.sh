@@ -46,11 +46,10 @@ ensure_ssh_dir() {
 
 redpanda_public_key_from_state() {
   tofu state show -no-color "${REDPANDA_VM_STATE_ADDRESS}" 2>/dev/null \
-    | awk -F' = ' '
-        $1 ~ /^[[:space:]]*public_key$/ {
-          gsub(/^"/, "", $2)
-          gsub(/"$/, "", $2)
-          print $2
+    | awk '
+        /^[[:space:]]*(ssh-rsa|ssh-ed25519|ecdsa-sha2-nistp)/ {
+          gsub(/^[[:space:]]+/, "", $0)
+          print $0
           exit
         }
       '

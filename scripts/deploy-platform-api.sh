@@ -29,6 +29,34 @@ read_tofu_var() {
   ' "${STAGING_DIR}/terraform.tfvars"
 }
 
+deploy_zip_package() {
+  local attempt
+  local max_attempts=12
+  local sleep_seconds=10
+
+  echo "Deploying package to ${AZURE_WEBAPP_NAME}/${WEB_APP_SLOT}..."
+
+  for attempt in $(seq 1 "${max_attempts}"); do
+    echo "Zip deployment attempt ${attempt}/${max_attempts}..."
+
+    if az webapp deployment source config-zip \
+      --resource-group "${AZURE_RESOURCE_GROUP}" \
+      --name "${AZURE_WEBAPP_NAME}" \
+      --slot "${WEB_APP_SLOT}" \
+      --src "${ZIP_PATH}" \
+      >/dev/null; then
+      echo "Zip deployment succeeded."
+      return 0
+    fi
+
+    echo "Zip deployment endpoint not ready yet. Waiting ${sleep_seconds}s before retry..."
+    sleep "${sleep_seconds}"
+  done
+
+  echo "ERROR: Zip deployment failed after ${max_attempts} attempts." >&2
+  exit 1
+}
+
 if [[ -z "${AZURE_RESOURCE_GROUP}" ]]; then
   AZURE_RESOURCE_GROUP="$(read_tofu_var "resource_group_name")"
 fi
@@ -61,13 +89,13 @@ echo "Creating deployment package..."
   zip -qr "${ZIP_PATH}" .
 )
 
-echo "Deploying package to ${AZURE_WEBAPP_NAME}/${WEB_APP_SLOT}..."
-az webapp deploy \
+deploy_zip_package
+
+echo "Restarting ${AZURE_WEBAPP_NAME}/${WEB_APP_SLOT}..."
+az webapp restart \
   --resource-group "${AZURE_RESOURCE_GROUP}" \
   --name "${AZURE_WEBAPP_NAME}" \
-  --slot "${WEB_APP_SLOT}" \
-  --src-path "${ZIP_PATH}" \
-  --type zip
+  --slot "${WEB_APP_SLOT}"
 
 echo "Platform.Api deployment complete."
 
