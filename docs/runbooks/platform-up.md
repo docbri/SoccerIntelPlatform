@@ -2,16 +2,46 @@
 
 ## Purpose
 
-Describe how to bring up the SoccerIntelPlatform staging infrastructure from source control using OpenTofu.
+Describe how to bring up, verify, resume, plan, and tear down the SoccerIntelPlatform staging platform from source control.
+
+The public operational entry point is:
+
+    ./scripts/platform.sh
+
+Lower-level scripts such as `scripts/up-staging.sh`, `scripts/up-redpanda.sh`, `scripts/destroy-staging.sh`, and `scripts/destroy-redpanda.sh` are implementation details. Operators should use `platform.sh` unless they are intentionally debugging one subordinate script.
+
+## Operational Model
+
+The current staging lifecycle is:
+
+    ./scripts/platform.sh plan
+    ./scripts/platform.sh up
+    ./scripts/platform.sh resume
+    ./scripts/platform.sh verify
+    ./scripts/platform.sh down
+
+Meaning:
+
+- `plan` generates a non-mutating staging OpenTofu plan.
+- `up` reconciles staging infrastructure, Redpanda, Databricks bundle resources, the medallion job, and verification.
+- `resume` does not recreate infrastructure. It redeploys/runs Databricks bundle resources and verifies the platform after idle runtime timeout.
+- `verify` validates the Databricks bundle and confirms the expected Unity Catalog medallion objects exist.
+- `down` tears down bundle resources, Redpanda, and staging infrastructure.
 
 ## Prerequisites
 
-- Azure CLI installed
-- OpenTofu installed
-- Databricks CLI installed
+Required local tools:
+
+- Azure CLI
+- OpenTofu
+- Databricks CLI
+- Git
+
+Required access:
+
 - Azure subscription access
-- Storage Blob Data Contributor access to the Terraform state storage account after bootstrap
-- Databricks workspace access for the operator running Unity Catalog verification
+- Storage Blob Data Contributor access to the OpenTofu remote state backend after bootstrap
+- Databricks workspace access for the operator running Databricks bundle and Unity Catalog verification commands
 
 ## 1. Authenticate to Azure
 
@@ -20,7 +50,22 @@ Run from any directory:
     az login
     az account set --subscription "Azure subscription 1"
 
-## 2. Bootstrap Terraform remote state
+## 2. Confirm Databricks CLI authentication
+
+The platform scripts do not create or switch Databricks CLI profiles during normal lifecycle commands.
+
+The staging workspace host is resolved from OpenTofu output when needed:
+
+    cd infra/terraform/env/staging
+    tofu output -raw databricks_workspace_url
+
+A non-mutating authentication check from the repository root is:
+
+    DATABRICKS_HOST="https://$(cd infra/terraform/env/staging && tofu output -raw databricks_workspace_url)" databricks catalogs get soccerintel_staging >/dev/null && echo "Databricks env-host auth OK"
+
+If this fails, fix local Databricks CLI authentication explicitly before running platform lifecycle commands.
+
+## 3. Bootstrap OpenTofu remote state
 
 Run from the repository root:
 
@@ -34,86 +79,107 @@ This creates the remote state foundation:
 - Storage account: `soccerinteltfstate`
 - Blob container: `tfstate`
 
-## 3. Plan staging infrastructure
+## 4. Plan staging infrastructure
 
 Run from the repository root:
 
-    ./scripts/up-staging.sh plan
+    ./scripts/platform.sh plan
 
-This initializes the staging OpenTofu root and generates:
+This delegates to the staging OpenTofu planning path and generates:
 
 - `infra/terraform/env/staging/staging.tfplan`
 - `infra/terraform/env/staging/staging-plan.txt`
 
-The script resolves the staging OpenTofu root as:
+The plan path is intentionally non-mutating. It should not deploy Databricks bundles, run jobs, apply grants, or recreate runtime services.
 
-    infra/terraform/env/staging
-
-## 4. Deploy staging infrastructure
+## 5. Bring up the staging platform
 
 Run from the repository root:
 
-    ./scripts/up-staging.sh apply
+    ./scripts/platform.sh up
 
-This deploys the staging platform infrastructure, including:
+This is the full staging bring-up path.
 
-- Azure resource group
-- App Service Plan
-- Linux Web App
-- Web App staging slot
-- Azure Databricks workspace
-- Azure Databricks Access Connector
-- ADLS Gen2 managed storage account
-- Unity Catalog managed storage container
-- Unity Catalog storage credential
-- Unity Catalog external location
-- Unity Catalog catalog: `soccerintel_staging`
-- Unity Catalog schemas: `bronze`, `silver`, `gold`
+It performs the following high-level sequence:
 
-## 5. Databricks authentication
+- Applies/reconciles staging infrastructure.
+- Resolves the Databricks workspace URL from OpenTofu output.
+- Uses the current Databricks CLI authentication context with `DATABRICKS_HOST`.
+- Applies Databricks Unity Catalog grants when the CI grant principal is available.
+- Verifies the Unity Catalog catalog and schemas.
+- Brings up Redpanda.
+- Validates the Databricks bundle.
+- Deploys the Databricks bundle.
+- Runs the medallion bundle job.
+- Verifies Databricks catalog, schemas, and medallion tables.
 
-The `apply` mode resolves the Databricks workspace URL from OpenTofu output:
+The Databricks bundle job currently runs:
 
-    tofu output -raw databricks_workspace_url
+- Bronze task
+- Silver task
+- Gold task
 
-Then it authenticates the Databricks CLI:
+Expected successful task output includes:
 
-    databricks auth login --host https://<workspace-url>
+    BRONZE INGESTION COMPLETE
+    SILVER TRANSFORMATION COMPLETE
+    GOLD TRANSFORMATION COMPLETE
 
-The script derives the Databricks CLI profile name from the workspace URL and switches that profile to default.
+## 6. Resume Databricks runtime work after idle timeout
 
-## 6. Verify Unity Catalog
+Run from the repository root:
 
-The `apply` mode verifies Unity Catalog by running:
+    ./scripts/platform.sh resume
 
-    databricks catalogs list
-    databricks schemas list soccerintel_staging
+Use `resume` when durable infrastructure already exists but the Databricks runtime path needs to be made usable again.
 
-Additional manual checks may include:
+The current bundle uses job-cluster behavior, so `resume` does not start a long-lived all-purpose cluster. Instead, it:
 
-    databricks external-locations list
-    databricks storage-credentials list
+- Validates the Databricks bundle.
+- Deploys the bundle.
+- Runs the medallion slice job.
+- Verifies catalog, schemas, and tables.
 
-Expected project-managed objects:
+Use `resume` instead of `up` when the platform exists and the goal is to re-run or re-wake the Databricks job path.
 
+## 7. Verify platform state
+
+Run from the repository root:
+
+    ./scripts/platform.sh verify
+
+Current verification checks:
+
+- Databricks bundle validation
 - Catalog: `soccerintel_staging`
 - Schemas:
   - `soccerintel_staging.bronze`
   - `soccerintel_staging.silver`
   - `soccerintel_staging.gold`
-- External location: `soccerintel-staging-storage`
-- Storage credential: `soccerintel-staging-credential`
+- Tables:
+  - `soccerintel_staging.bronze.raw_ingestion_events`
+  - `soccerintel_staging.silver.league_status_events`
+  - `soccerintel_staging.gold.current_league_status`
 
-Databricks-managed objects whose names begin with `adb_` are expected and should not be deleted manually.
+Expected successful verification ends with:
 
-## 7. Validate Unity Catalog write access
+    Platform verification completed.
 
-In Databricks SQL Editor, run:
+## 8. Tear down staging
 
-    CREATE TABLE soccerintel_staging.bronze.test_table (id INT);
-    DROP TABLE soccerintel_staging.bronze.test_table;
+Run from the repository root:
 
-If both statements succeed, the Unity Catalog storage path, storage credential, external location, access connector, and schema permissions are working.
+    ./scripts/platform.sh down
+
+This is the public teardown path.
+
+It currently delegates to lower-level teardown behavior for:
+
+- Databricks bundle resources, where applicable
+- Redpanda
+- Staging infrastructure
+
+Do not call subordinate destroy scripts directly unless intentionally debugging a specific layer.
 
 ## Redpanda SSH Key Note
 
@@ -121,19 +187,38 @@ The Redpanda VM module expects an SSH public key at:
 
     ~/.ssh/id_rsa.pub
 
-In `plan` mode, `scripts/up-staging.sh` avoids generating a new SSH key when the Redpanda VM already exists. It reads the existing Redpanda public key from OpenTofu state and writes it to the expected public key path.
+In `plan` mode, the staging script avoids generating a new SSH key when the Redpanda VM already exists. It reads the existing Redpanda public key from OpenTofu state and writes it to the expected public key path.
 
 This prevents `tofu plan` from forcing an unnecessary Redpanda VM replacement due to an artificial SSH key change.
 
-In `apply` mode, the script ensures an SSH key pair exists before applying infrastructure.
+In `apply` mode, the staging script ensures an SSH key pair exists before applying infrastructure.
+
+## Databricks Unity Catalog Grant Note
+
+The staging apply path can apply Unity Catalog grants for the CI principal when `AZURE_CLIENT_ID` is present.
+
+In GitHub Actions, `AZURE_CLIENT_ID` is supplied by the staging environment secrets.
+
+Locally, if `AZURE_CLIENT_ID` is not set, the script skips grant mutation and continues verification using the current Databricks CLI authentication context.
+
+The grants currently applied for the CI principal are:
+
+- `USE CATALOG` on `soccerintel_staging`
+- `USE SCHEMA` on `soccerintel_staging.bronze`
+- `USE SCHEMA` on `soccerintel_staging.silver`
+- `USE SCHEMA` on `soccerintel_staging.gold`
+
+Storage credential and external location grant automation should only be added if a full rebuild proves it is required.
 
 ## Success Criteria
 
-The platform bring-up is complete when:
+The staging platform is considered up when:
 
-- `./scripts/up-staging.sh apply` completes successfully
-- `soccerintel_staging` exists
-- `bronze`, `silver`, and `gold` schemas exist
-- `soccerintel-staging-storage` exists
-- `soccerintel-staging-credential` exists
-- The Databricks SQL create/drop table validation succeeds
+- `./scripts/platform.sh up` completes successfully
+- The Databricks bundle job terminates successfully
+- Bronze, Silver, and Gold tasks complete
+- `./scripts/platform.sh verify` completes successfully
+- The expected medallion tables exist:
+  - `soccerintel_staging.bronze.raw_ingestion_events`
+  - `soccerintel_staging.silver.league_status_events`
+  - `soccerintel_staging.gold.current_league_status`
