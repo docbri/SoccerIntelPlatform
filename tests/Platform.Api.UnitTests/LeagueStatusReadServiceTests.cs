@@ -1,4 +1,7 @@
+using Microsoft.Extensions.Options;
+using MicrosoftOptions = Microsoft.Extensions.Options.Options;
 using Platform.Api.Infrastructure.Databricks;
+using Platform.Api.Options;
 using Platform.Api.Services;
 
 namespace Platform.Api.UnitTests;
@@ -9,11 +12,11 @@ public class LeagueStatusReadServiceTests
     public async Task BuildsSql_WithNoFilters_ReturnsAll()
     {
         var fakeClient = new FakeDatabricksSqlClient();
-        var service = new LeagueStatusReadService(fakeClient);
+        var service = new LeagueStatusReadService(fakeClient, TestDatabricksOptions());
 
         await service.GetCurrentStatusesAsync(null, null, CancellationToken.None);
 
-        Assert.Contains("FROM gold.current_league_status", fakeClient.LastSql);
+        Assert.Contains("FROM soccerintel_staging.gold.current_league_status", fakeClient.LastSql);
         Assert.DoesNotContain("WHERE", fakeClient.LastSql);
     }
 
@@ -21,7 +24,7 @@ public class LeagueStatusReadServiceTests
     public async Task BuildsSql_WithLeagueId_AddsFilter()
     {
         var fakeClient = new FakeDatabricksSqlClient();
-        var service = new LeagueStatusReadService(fakeClient);
+        var service = new LeagueStatusReadService(fakeClient, TestDatabricksOptions());
 
         await service.GetCurrentStatusesAsync(135, null, CancellationToken.None);
 
@@ -32,7 +35,7 @@ public class LeagueStatusReadServiceTests
     public async Task BuildsSql_WithSeason_AddsFilter()
     {
         var fakeClient = new FakeDatabricksSqlClient();
-        var service = new LeagueStatusReadService(fakeClient);
+        var service = new LeagueStatusReadService(fakeClient, TestDatabricksOptions());
 
         await service.GetCurrentStatusesAsync(null, 2025, CancellationToken.None);
 
@@ -65,7 +68,7 @@ public class LeagueStatusReadServiceTests
             ]
         };
 
-        var service = new LeagueStatusReadService(fakeClient);
+        var service = new LeagueStatusReadService(fakeClient, TestDatabricksOptions());
 
         var result = await service.GetCurrentStatusesAsync(null, null, CancellationToken.None);
 
@@ -78,6 +81,16 @@ public class LeagueStatusReadServiceTests
         Assert.Null(result[0].ApiWarning);
         Assert.Equal(now, result[0].LatestFetchedAtUtc);
         Assert.Equal(now, result[0].LatestIngestedAtUtc);
+    }
+
+    private static IOptions<DatabricksSqlOptions> TestDatabricksOptions()
+    {
+        return MicrosoftOptions.Create(new DatabricksSqlOptions
+        {
+            Catalog = "soccerintel_staging",
+            Schema = "gold",
+            CurrentLeagueStatusObjectName = "current_league_status"
+        });
     }
 
     private sealed class FakeDatabricksSqlClient : IDatabricksSqlClient

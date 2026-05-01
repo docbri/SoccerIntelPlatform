@@ -22,6 +22,16 @@ GOLD_CURRENT_LEAGUE_STATUS_TABLE="${GOLD_CURRENT_LEAGUE_STATUS_TABLE:-current_le
 WEB_APP_SLOT="${WEB_APP_SLOT:-staging}"
 REDPANDA_VM_NAME="${REDPANDA_VM_NAME:-vm-redpanda-staging}"
 REDPANDA_PUBLIC_IP_NAME="${REDPANDA_PUBLIC_IP_NAME:-pip-redpanda}"
+REDPANDA_PORT="${REDPANDA_PORT:-9092}"
+
+WORKER_PROJECT="${WORKER_PROJECT:-${ROOT_DIR}/src/Platform.Worker/Platform.Worker.csproj}"
+RUNTIME_DIR="${ROOT_DIR}/.runtime"
+INGEST_PID_FILE="${RUNTIME_DIR}/platform-worker.pid"
+INGEST_STATE_FILE="${RUNTIME_DIR}/platform-ingest.env"
+INGEST_LOG_FILE="${RUNTIME_DIR}/platform-worker.log"
+
+API_FOOTBALL_MAX_CALLS_PER_DAY="${API_FOOTBALL_MAX_CALLS_PER_DAY:-100}"
+INGEST_DEFAULT_POLLS_PER_HOUR="${INGEST_DEFAULT_POLLS_PER_HOUR:-1}"
 
 usage() {
   cat <<EOF_USAGE
@@ -32,6 +42,11 @@ Usage:
   ./scripts/platform.sh verify
   ./scripts/platform.sh resume
   ./scripts/platform.sh reset
+
+  ./scripts/platform.sh ingest once [--max-calls-per-day 100] [--bootstrap-server host:port]
+  ./scripts/platform.sh ingest poll [--pph 1|--polls-per-hour 1] [--max-calls-per-day 100] [--bootstrap-server host:port]
+  ./scripts/platform.sh ingest stop
+  ./scripts/platform.sh ingest status
 
 Environment overrides:
   DATABRICKS_TARGET                         Default: staging
@@ -48,6 +63,12 @@ Environment overrides:
   WEB_APP_SLOT                              Default: staging
   REDPANDA_VM_NAME                          Default: vm-redpanda-staging
   REDPANDA_PUBLIC_IP_NAME                   Default: pip-redpanda
+  REDPANDA_PORT                             Default: 9092
+  REDPANDA_BOOTSTRAP_SERVER                 Default: resolved from Azure public IP pip-redpanda
+
+  WORKER_PROJECT                            Default: src/Platform.Worker/Platform.Worker.csproj
+  API_FOOTBALL_MAX_CALLS_PER_DAY            Default: 100
+  INGEST_DEFAULT_POLLS_PER_HOUR             Default: 1
 EOF_USAGE
 }
 
@@ -76,6 +97,105 @@ require_dir() {
     echo "ERROR: Required directory not found: ${dir_path}" >&2
     exit 1
   fi
+}
+
+require_positive_integer() {
+  local value="$1"
+  local name="$2"
+
+  if ! [[ "${value}" =~ ^[1-9][0-9]*$ ]]; then
+    echo "ERROR: ${name} must be a positive integer. Received: ${value}" >&2
+    exit 1
+  fi
+}
+
+ensure_runtime_dir() {
+  mkdir -p "${RUNTIME_DIR}"
+}
+
+worker_pid_is_running() {
+  local pid
+
+  if [[ ! -f "${INGEST_PID_FILE}" ]]; then
+    return 1
+  fi
+
+  pid="$(cat "${INGEST_PID_FILE}")"
+
+  if [[ -z "${pid}" ]]; then
+    return 1
+  fi
+
+  kill -0 "${pid}" >/dev/null 2>&1
+}
+
+parse_ingest_options() {
+  INGEST_POLLS_PER_HOUR="${INGEST_DEFAULT_POLLS_PER_HOUR}"
+  INGEST_MAX_CALLS_PER_DAY="${API_FOOTBALL_MAX_CALLS_PER_DAY}"
+  INGEST_BOOTSTRAP_SERVER="${REDPANDA_BOOTSTRAP_SERVER:-}"
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --pph|--polls-per-hour)
+        if [[ $# -lt 2 ]]; then
+          echo "ERROR: $1 requires a value." >&2
+          exit 1
+        fi
+
+        INGEST_POLLS_PER_HOUR="$2"
+        shift 2
+        ;;
+      --max-calls-per-day)
+        if [[ $# -lt 2 ]]; then
+          echo "ERROR: $1 requires a value." >&2
+          exit 1
+        fi
+
+        INGEST_MAX_CALLS_PER_DAY="$2"
+        shift 2
+        ;;
+      --bootstrap-server)
+        if [[ $# -lt 2 ]]; then
+          echo "ERROR: $1 requires a value." >&2
+          exit 1
+        fi
+
+        INGEST_BOOTSTRAP_SERVER="$2"
+        shift 2
+        ;;
+      *)
+        echo "ERROR: Unknown ingest option: $1" >&2
+        usage
+        exit 1
+        ;;
+    esac
+  done
+
+  require_positive_integer "${INGEST_POLLS_PER_HOUR}" "polls per hour"
+  require_positive_integer "${INGEST_MAX_CALLS_PER_DAY}" "max calls per day"
+}
+
+validate_polling_budget() {
+  local polls_per_hour="$1"
+  local max_calls_per_day="$2"
+  local projected_daily_polls
+  local safe_max_polls_per_hour
+
+  projected_daily_polls=$((polls_per_hour * 24))
+  safe_max_polls_per_hour=$((max_calls_per_day / 24))
+
+  if (( projected_daily_polls > max_calls_per_day )); then
+    echo "ERROR: --pph ${polls_per_hour} would allow up to ${projected_daily_polls} polls/day." >&2
+    echo "Daily max is ${max_calls_per_day}." >&2
+    echo "Choose a lower polling frequency. With max ${max_calls_per_day}, normal safe max is ${safe_max_polls_per_hour} polls/hour." >&2
+    exit 1
+  fi
+}
+
+poll_interval_seconds() {
+  local polls_per_hour="$1"
+
+  echo $((3600 / polls_per_hour))
 }
 
 read_tofu_var() {
@@ -112,6 +232,68 @@ azure_webapp_name() {
   fi
 
   read_tofu_var "web_app_name"
+}
+
+resolve_redpanda_bootstrap_server() {
+  local resource_group_name
+  local redpanda_ip
+
+  if [[ -n "${INGEST_BOOTSTRAP_SERVER:-}" ]]; then
+    printf '%s\n' "${INGEST_BOOTSTRAP_SERVER}"
+    return
+  fi
+
+  require_command az
+
+  resource_group_name="$(azure_resource_group)"
+
+  if [[ -z "${resource_group_name}" ]]; then
+    echo "ERROR: Could not resolve Azure resource group." >&2
+    echo "Set AZURE_RESOURCE_GROUP or define resource_group_name in ${STAGING_TFVARS}." >&2
+    exit 1
+  fi
+
+  redpanda_ip="$(
+    az network public-ip show \
+      --resource-group "${resource_group_name}" \
+      --name "${REDPANDA_PUBLIC_IP_NAME}" \
+      --query ipAddress \
+      --output tsv
+  )"
+
+  if [[ -z "${redpanda_ip}" ]]; then
+    echo "ERROR: Could not resolve Redpanda public IP: ${REDPANDA_PUBLIC_IP_NAME}" >&2
+    exit 1
+  fi
+
+  printf '%s:%s\n' "${redpanda_ip}" "${REDPANDA_PORT}"
+}
+
+verify_tcp_endpoint() {
+  local endpoint="$1"
+  local host
+  local port
+
+  host="${endpoint%:*}"
+  port="${endpoint##*:}"
+
+  if [[ -z "${host}" || -z "${port}" || "${host}" == "${port}" ]]; then
+    echo "ERROR: Invalid TCP endpoint: ${endpoint}" >&2
+    echo "Expected format: host:port" >&2
+    exit 1
+  fi
+
+  require_command nc
+
+  echo "Verifying TCP connectivity to ${host}:${port}..."
+
+  if ! nc -vz "${host}" "${port}" >/dev/null 2>&1; then
+    echo "ERROR: Cannot connect to ${host}:${port}." >&2
+    echo "Confirm Redpanda is running and that the network/security rules allow access." >&2
+    exit 1
+  fi
+
+  echo "TCP connectivity verified: ${host}:${port}"
 }
 
 run_databricks_bundle_validate() {
@@ -242,7 +424,7 @@ verify_azure_webapp_slot() {
   fi
 
   echo "Verifying Platform.Api health endpoint: https://${default_hostname}/health"
-  
+
   for attempt in {1..12}; do
     if curl \
       --fail \
@@ -254,11 +436,11 @@ verify_azure_webapp_slot() {
       echo "Platform.Api health endpoint is healthy."
       return
     fi
-  
+
     echo "Platform.Api health endpoint not ready yet. Retry ${attempt}/12..."
     sleep 5
   done
-  
+
   echo "ERROR: Platform.Api health endpoint did not become healthy: https://${default_hostname}/health" >&2
   exit 1
 }
@@ -350,26 +532,26 @@ run_with_current_databricks_profile() {
 
 verify_databricks_catalog() {
    local catalog_name="$1"
- 
+
    echo "Verifying Databricks catalog: ${catalog_name}"
    run_with_current_databricks_profile databricks catalogs get "${catalog_name}" >/dev/null
  }
- 
+
  verify_databricks_schema() {
    local catalog_name="$1"
    local schema_name="$2"
    local full_schema_name="${catalog_name}.${schema_name}"
- 
+
    echo "Verifying Databricks schema: ${full_schema_name}"
    run_with_current_databricks_profile databricks schemas get "${full_schema_name}" >/dev/null
  }
- 
+
  verify_databricks_table() {
    local catalog_name="$1"
    local schema_name="$2"
    local table_name="$3"
    local full_table_name="${catalog_name}.${schema_name}.${table_name}"
- 
+
    echo "Verifying Databricks table: ${full_table_name}"
    run_with_current_databricks_profile databricks tables get "${full_table_name}" >/dev/null
  }
@@ -413,7 +595,7 @@ up_platform() {
 
   echo "Applying staging infrastructure..."
   "${SCRIPTS_DIR}/up-staging.sh" apply
-  
+
   echo "Deploying Platform.Api..."
   "${SCRIPTS_DIR}/deploy-platform-api.sh"
 
@@ -504,8 +686,184 @@ resume_platform() {
   verify_platform
 }
 
+ingest_once() {
+  local bootstrap_server
+
+  parse_ingest_options "$@"
+
+  require_command dotnet
+  require_file "${WORKER_PROJECT}"
+
+  bootstrap_server="$(resolve_redpanda_bootstrap_server)"
+  verify_tcp_endpoint "${bootstrap_server}"
+
+  echo "Running one controlled ingestion pass."
+  echo "Worker project: ${WORKER_PROJECT}"
+  echo "Kafka bootstrap server: ${bootstrap_server}"
+  echo "Max API-Football calls per day: ${INGEST_MAX_CALLS_PER_DAY}"
+
+  Kafka__BootstrapServers="${bootstrap_server}" \
+  API_FOOTBALL_CALL_LEDGER_PATH="${ROOT_DIR}/localdata/api-football-call-ledger.json" \
+  dotnet run \
+    --project "${WORKER_PROJECT}" \
+    -- \
+    --mode once \
+    --max-calls-per-day "${INGEST_MAX_CALLS_PER_DAY}"
+}
+
+ingest_poll() {
+  local interval_seconds
+  local bootstrap_server
+
+  parse_ingest_options "$@"
+
+  require_command dotnet
+  require_file "${WORKER_PROJECT}"
+  ensure_runtime_dir
+  validate_polling_budget "${INGEST_POLLS_PER_HOUR}" "${INGEST_MAX_CALLS_PER_DAY}"
+
+  bootstrap_server="$(resolve_redpanda_bootstrap_server)"
+  verify_tcp_endpoint "${bootstrap_server}"
+
+  interval_seconds="$(poll_interval_seconds "${INGEST_POLLS_PER_HOUR}")"
+
+  if worker_pid_is_running; then
+    echo "ERROR: Ingestion polling already appears to be running." >&2
+    echo "PID file: ${INGEST_PID_FILE}" >&2
+    echo "Run './scripts/platform.sh ingest status' or './scripts/platform.sh ingest stop'." >&2
+    exit 1
+  fi
+
+  echo "Starting ingestion polling."
+  echo "Worker project: ${WORKER_PROJECT}"
+  echo "Kafka bootstrap server: ${bootstrap_server}"
+  echo "Polls per hour: ${INGEST_POLLS_PER_HOUR}"
+  echo "Poll interval seconds: ${interval_seconds}"
+  echo "Max API-Football calls per day: ${INGEST_MAX_CALLS_PER_DAY}"
+  echo "Log file: ${INGEST_LOG_FILE}"
+
+  Kafka__BootstrapServers="${bootstrap_server}" \
+  API_FOOTBALL_CALL_LEDGER_PATH="${ROOT_DIR}/localdata/api-football-call-ledger.json" \
+  nohup dotnet run \
+    --project "${WORKER_PROJECT}" \
+    -- \
+    --mode poll \
+    --poll-interval-seconds "${interval_seconds}" \
+    --max-calls-per-day "${INGEST_MAX_CALLS_PER_DAY}" \
+    >"${INGEST_LOG_FILE}" 2>&1 &
+
+  echo "$!" > "${INGEST_PID_FILE}"
+
+  cat > "${INGEST_STATE_FILE}" <<EOF_INGEST_STATE
+MODE=poll
+KAFKA_BOOTSTRAP_SERVER=${bootstrap_server}
+POLLS_PER_HOUR=${INGEST_POLLS_PER_HOUR}
+POLL_INTERVAL_SECONDS=${interval_seconds}
+MAX_CALLS_PER_DAY=${INGEST_MAX_CALLS_PER_DAY}
+STARTED_AT_UTC=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+WORKER_PROJECT=${WORKER_PROJECT}
+LOG_FILE=${INGEST_LOG_FILE}
+PID_FILE=${INGEST_PID_FILE}
+EOF_INGEST_STATE
+
+  echo "Ingestion polling started with PID $(cat "${INGEST_PID_FILE}")."
+}
+
+ingest_stop() {
+  local pid
+
+  if ! worker_pid_is_running; then
+    echo "Ingestion polling is not running."
+    rm -f "${INGEST_PID_FILE}"
+    return
+  fi
+
+  pid="$(cat "${INGEST_PID_FILE}")"
+
+  echo "Stopping ingestion polling PID ${pid}..."
+  kill "${pid}"
+
+  for attempt in {1..10}; do
+    if ! kill -0 "${pid}" >/dev/null 2>&1; then
+      rm -f "${INGEST_PID_FILE}"
+      echo "Ingestion polling stopped."
+      return
+    fi
+
+    sleep 1
+  done
+
+  echo "WARNING: Process did not stop after graceful termination. Sending SIGKILL." >&2
+  kill -9 "${pid}" >/dev/null 2>&1 || true
+  rm -f "${INGEST_PID_FILE}"
+  echo "Ingestion polling stopped."
+}
+
+ingest_status() {
+  echo "Ingestion status"
+  echo "----------------"
+
+  if worker_pid_is_running; then
+    echo "State: running"
+    echo "PID: $(cat "${INGEST_PID_FILE}")"
+  else
+    echo "State: stopped"
+
+    if [[ -f "${INGEST_PID_FILE}" ]]; then
+      echo "Stale PID file found: ${INGEST_PID_FILE}"
+    fi
+  fi
+
+  if [[ -f "${INGEST_STATE_FILE}" ]]; then
+    echo
+    echo "Last polling configuration:"
+    cat "${INGEST_STATE_FILE}"
+  fi
+
+  if [[ -f "${INGEST_LOG_FILE}" ]]; then
+    echo
+    echo "Recent worker log:"
+    tail -n 25 "${INGEST_LOG_FILE}"
+  fi
+}
+
+ingest_platform() {
+  local ingest_action="${1:-}"
+
+  if [[ $# -gt 0 ]]; then
+    shift
+  fi
+
+  case "${ingest_action}" in
+    once)
+      ingest_once "$@"
+      ;;
+    poll)
+      ingest_poll "$@"
+      ;;
+    stop)
+      ingest_stop
+      ;;
+    status)
+      ingest_status
+      ;;
+    -h|--help|help|"")
+      usage
+      ;;
+    *)
+      echo "ERROR: Unknown ingest action: ${ingest_action}" >&2
+      usage
+      exit 1
+      ;;
+  esac
+}
+
 main() {
   local action="${1:-}"
+
+  if [[ $# -gt 0 ]]; then
+    shift
+  fi
 
   case "${action}" in
     plan)
@@ -525,6 +883,9 @@ main() {
       ;;
     resume)
       resume_platform
+      ;;
+    ingest)
+      ingest_platform "$@"
       ;;
     -h|--help|help|"")
       usage

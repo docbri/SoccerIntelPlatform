@@ -9,5 +9,6 @@ public sealed class ApiFootballOptions
     public List<int> LeagueIds { get; set; } = [];
     public int Season { get; set; }
     public int PollIntervalSeconds { get; set; } = 60;
+    public int MaxCallsPerDay { get; set; } = 100;
     public bool Enabled { get; set; } = false;
 }
