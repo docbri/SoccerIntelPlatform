@@ -224,8 +224,17 @@ echo "Applying infrastructure..."
 tofu apply -auto-approve
 
 echo "Resolving Databricks workspace URL..."
-export DATABRICKS_HOST="https://$(tofu output -raw databricks_workspace_url)"
-echo "Using Databricks host from OpenTofu output: ${DATABRICKS_HOST}"
+DATABRICKS_HOST="https://$(tofu output -raw databricks_workspace_url)"
+DATABRICKS_PROFILE="$(echo "${DATABRICKS_HOST}" | sed 's|https://||' | cut -d'.' -f1)"
+
+echo "Databricks workspace host resolved from OpenTofu output: ${DATABRICKS_HOST}"
+echo "Databricks profile for this workspace: ${DATABRICKS_PROFILE}"
+
+echo "Authenticating Databricks CLI for workspace..."
+databricks auth login --host "${DATABRICKS_HOST}"
+
+echo "Setting Databricks default profile to workspace profile..."
+databricks auth switch -p "${DATABRICKS_PROFILE}"
 
 echo "Verifying Databricks CLI authentication..."
 databricks catalogs get "${DATABRICKS_CATALOG}" >/dev/null

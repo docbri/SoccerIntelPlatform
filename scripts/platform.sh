@@ -122,7 +122,7 @@ run_databricks_bundle_validate() {
 
   (
     cd "${DATABRICKS_DIR}"
-    databricks bundle validate -t "${TARGET}"
+    run_with_current_databricks_profile databricks bundle validate -t "${TARGET}"
   )
 }
 
@@ -134,7 +134,7 @@ run_databricks_bundle_deploy() {
 
   (
     cd "${DATABRICKS_DIR}"
-    databricks bundle deploy -t "${TARGET}"
+    run_with_current_databricks_profile databricks bundle deploy -t "${TARGET}"
   )
 }
 
@@ -147,13 +147,13 @@ run_databricks_bundle_run() {
   (
     cd "${DATABRICKS_DIR}"
 
-    if databricks bundle run -t "${TARGET}" "${BUNDLE_JOB}"; then
+    if run_with_current_databricks_profile databricks bundle run -t "${TARGET}" "${BUNDLE_JOB}"; then
       return 0
     fi
 
     echo "Retrying Databricks bundle run with alternate CLI argument ordering..."
 
-    databricks bundle run "${BUNDLE_JOB}" -t "${TARGET}"
+    run_with_current_databricks_profile databricks bundle run "${BUNDLE_JOB}" -t "${TARGET}"
   )
 }
 
@@ -166,7 +166,7 @@ run_databricks_bundle_destroy() {
   (
     cd "${DATABRICKS_DIR}"
 
-    if databricks bundle destroy -t "${TARGET}" --auto-approve; then
+    if run_with_current_databricks_profile databricks bundle destroy -t "${TARGET}" --auto-approve; then
       return 0
     fi
 
@@ -305,31 +305,63 @@ verify_azure_platform_objects() {
   verify_azure_public_ip "${resource_group_name}" "${REDPANDA_PUBLIC_IP_NAME}"
 }
 
+current_databricks_host() {
+  local workspace_url
+
+  workspace_url="$(cd "${STAGING_DIR}" && tofu output -raw databricks_workspace_url)"
+  printf 'https://%s\n' "${workspace_url}"
+}
+
+databricks_profile_for_host() {
+  local host="$1"
+
+  echo "${host}" | sed 's|https://||' | cut -d'.' -f1
+}
+
+run_with_current_databricks_profile() {
+  local host
+  local profile
+
+  host="$(current_databricks_host)"
+  profile="$(databricks_profile_for_host "${host}")"
+
+  echo "Using Databricks host for bundle command: ${host}"
+  echo "Using Databricks profile for bundle command: ${profile}"
+
+  env \
+    -u DATABRICKS_HOST \
+    -u DATABRICKS_AZURE_TENANT_ID \
+    -u DATABRICKS_CLIENT_ID \
+    -u DATABRICKS_CLIENT_SECRET \
+    DATABRICKS_CONFIG_PROFILE="${profile}" \
+    "$@"
+}
+
 verify_databricks_catalog() {
-  local catalog_name="$1"
-
-  echo "Verifying Databricks catalog: ${catalog_name}"
-  databricks catalogs get "${catalog_name}" >/dev/null
-}
-
-verify_databricks_schema() {
-  local catalog_name="$1"
-  local schema_name="$2"
-  local full_schema_name="${catalog_name}.${schema_name}"
-
-  echo "Verifying Databricks schema: ${full_schema_name}"
-  databricks schemas get "${full_schema_name}" >/dev/null
-}
-
-verify_databricks_table() {
-  local catalog_name="$1"
-  local schema_name="$2"
-  local table_name="$3"
-  local full_table_name="${catalog_name}.${schema_name}.${table_name}"
-
-  echo "Verifying Databricks table: ${full_table_name}"
-  databricks tables get "${full_table_name}" >/dev/null
-}
+   local catalog_name="$1"
+ 
+   echo "Verifying Databricks catalog: ${catalog_name}"
+   run_with_current_databricks_profile databricks catalogs get "${catalog_name}" >/dev/null
+ }
+ 
+ verify_databricks_schema() {
+   local catalog_name="$1"
+   local schema_name="$2"
+   local full_schema_name="${catalog_name}.${schema_name}"
+ 
+   echo "Verifying Databricks schema: ${full_schema_name}"
+   run_with_current_databricks_profile databricks schemas get "${full_schema_name}" >/dev/null
+ }
+ 
+ verify_databricks_table() {
+   local catalog_name="$1"
+   local schema_name="$2"
+   local table_name="$3"
+   local full_table_name="${catalog_name}.${schema_name}.${table_name}"
+ 
+   echo "Verifying Databricks table: ${full_table_name}"
+   run_with_current_databricks_profile databricks tables get "${full_table_name}" >/dev/null
+ }
 
 verify_databricks_unity_catalog_objects() {
   require_command databricks
@@ -366,9 +398,13 @@ plan_platform() {
 up_platform() {
   require_file "${SCRIPTS_DIR}/up-staging.sh"
   require_file "${SCRIPTS_DIR}/up-redpanda.sh"
+  require_file "${SCRIPTS_DIR}/deploy-platform-api.sh"
 
   echo "Applying staging infrastructure..."
   "${SCRIPTS_DIR}/up-staging.sh" apply
+  
+  echo "Deploying Platform.Api..."
+  "${SCRIPTS_DIR}/deploy-platform-api.sh"
 
   echo "Bringing up Redpanda..."
   "${SCRIPTS_DIR}/up-redpanda.sh"
