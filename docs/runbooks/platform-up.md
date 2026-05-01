@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Describe how to bring up, verify, resume, plan, and tear down the SoccerIntelPlatform staging platform from source control.
+Describe how to bring up, verify, resume, plan, tear down, and explicitly reset the SoccerIntelPlatform staging platform from source control.
 
 The public operational entry point is:
 
@@ -19,6 +19,7 @@ The current staging lifecycle is:
     ./scripts/platform.sh resume
     ./scripts/platform.sh verify
     ./scripts/platform.sh down
+    ./scripts/platform.sh reset
 
 Meaning:
 
@@ -26,7 +27,8 @@ Meaning:
 - `up` reconciles staging infrastructure, Redpanda, Databricks bundle resources, the medallion job, and verification.
 - `resume` does not recreate infrastructure. It redeploys/runs Databricks bundle resources and verifies the platform after idle runtime timeout.
 - `verify` validates Azure platform resources, the Databricks bundle, and the expected Unity Catalog medallion objects.
-- `down` tears down bundle resources, Redpanda, and staging infrastructure.
+- `down` performs ordinary teardown of bundle resources, Redpanda, and staging infrastructure. It does not intentionally delete medallion tables first.
+- `reset` is an explicitly destructive staging reset. It deletes known Databricks medallion tables before ordinary teardown and requires `CONFIRM_DESTRUCTIVE_RESET=destroy-staging-data`.
 
 ## Prerequisites
 
@@ -178,7 +180,7 @@ Run from the repository root:
 
     ./scripts/platform.sh down
 
-This is the public teardown path.
+This is the ordinary public teardown path.
 
 It currently delegates to lower-level teardown behavior for:
 
@@ -186,7 +188,25 @@ It currently delegates to lower-level teardown behavior for:
 - Redpanda
 - Staging infrastructure
 
+The ordinary `down` command does not intentionally delete the known Databricks medallion tables before teardown.
+
 Do not call subordinate destroy scripts directly unless intentionally debugging a specific layer.
+
+## 9. Destructive staging reset
+
+Use this only when intentionally preparing for a full rebuild rehearsal.
+
+Run from the repository root:
+
+    CONFIRM_DESTRUCTIVE_RESET=destroy-staging-data ./scripts/platform.sh reset
+
+This command deletes the known Databricks medallion tables before running ordinary teardown:
+
+- `soccerintel_staging.gold.current_league_status`
+- `soccerintel_staging.silver.league_status_events`
+- `soccerintel_staging.bronze.raw_ingestion_events`
+
+This command is intentionally guarded. Running `./scripts/platform.sh reset` without `CONFIRM_DESTRUCTIVE_RESET=destroy-staging-data` fails without deleting data.
 
 ## Redpanda SSH Key Note
 

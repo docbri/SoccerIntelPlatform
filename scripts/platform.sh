@@ -31,6 +31,7 @@ Usage:
   ./scripts/platform.sh down
   ./scripts/platform.sh verify
   ./scripts/platform.sh resume
+  ./scripts/platform.sh reset
 
 Environment overrides:
   DATABRICKS_TARGET                         Default: staging
@@ -392,6 +393,46 @@ down_platform() {
   "${SCRIPTS_DIR}/destroy-staging.sh"
 }
 
+reset_platform() {
+  local expected_confirmation="destroy-staging-data"
+  local table
+
+  if [[ "${CONFIRM_DESTRUCTIVE_RESET:-}" != "${expected_confirmation}" ]]; then
+    echo "ERROR: Destructive staging reset requires explicit confirmation." >&2
+    echo "This will delete known Databricks managed medallion tables before running ordinary teardown." >&2
+    echo "Required confirmation:" >&2
+    echo "  CONFIRM_DESTRUCTIVE_RESET=${expected_confirmation} ./scripts/platform.sh reset" >&2
+    exit 1
+  fi
+
+  require_command databricks
+
+  echo "Destructive staging reset confirmed."
+  echo "Resolving Databricks workspace host from OpenTofu output..."
+
+  export DATABRICKS_HOST="https://$(cd "${STAGING_DIR}" && tofu output -raw databricks_workspace_url)"
+
+  echo "Using Databricks host from OpenTofu output: ${DATABRICKS_HOST}"
+  echo "Deleting known Databricks managed medallion tables..."
+
+  for table in \
+    "${DATABRICKS_CATALOG}.${DATABRICKS_GOLD_SCHEMA}.${GOLD_CURRENT_LEAGUE_STATUS_TABLE}" \
+    "${DATABRICKS_CATALOG}.${DATABRICKS_SILVER_SCHEMA}.${SILVER_LEAGUE_STATUS_EVENTS_TABLE}" \
+    "${DATABRICKS_CATALOG}.${DATABRICKS_BRONZE_SCHEMA}.${BRONZE_RAW_INGESTION_EVENTS_TABLE}"
+  do
+    if databricks tables get "${table}" >/dev/null 2>&1; then
+      echo "Deleting Databricks table: ${table}"
+      databricks tables delete "${table}"
+    else
+      echo "Databricks table not found; skipping: ${table}"
+    fi
+  done
+
+  echo "Known Databricks medallion tables deleted or absent."
+  echo "Running ordinary platform teardown..."
+  down_platform
+}
+
 verify_platform() {
   echo "Verifying platform..."
 
@@ -428,6 +469,9 @@ main() {
       ;;
     down)
       down_platform
+      ;;
+    reset)
+      reset_platform
       ;;
     verify)
       verify_platform
