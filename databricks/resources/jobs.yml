@@ -16,7 +16,7 @@ resources:
             custom_tags:
               ResourceClass: "SingleNode"
             data_security_mode: SINGLE_USER
-      
+
       tasks:
         - task_key: bronze
           job_cluster_key: medallion_cluster
@@ -27,6 +27,14 @@ resources:
               - ${var.catalog}
               - "--bronze_schema"
               - ${var.bronze_schema}
+              - "--kafka_bootstrap_servers"
+              - ${var.kafka_bootstrap_servers}
+              - "--topic_name"
+              - ${var.kafka_topic_name}
+              - "--starting_offsets"
+              - "earliest"
+              - "--ending_offsets"
+              - "latest"
 
         - task_key: silver
           depends_on:
@@ -55,4 +63,3 @@ resources:
               - ${var.silver_schema}
               - "--gold_schema"
               - ${var.gold_schema}
-            
