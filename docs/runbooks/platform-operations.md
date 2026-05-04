@@ -586,7 +586,7 @@ Current operational state:
 
 The Bronze Databricks task reads available Kafka messages from the configured Redpanda topic, parses the JSON `IngestionEnvelope`, preserves Kafka transport metadata, appends accepted records to Unity Catalog Bronze, and routes invalid records to the Bronze quarantine table.
 
-The current Bronze task is batch-oriented, not long-running streaming.  It reads from:
+The current Bronze task is batch-oriented, not long-running streaming. It reads from:
 
     startingOffsets = earliest
     endingOffsets = latest
@@ -597,13 +597,23 @@ and uses Kafka transport metadata for deduplication:
 
 This means repeated bundle runs can safely re-read the topic while avoiding duplicate Bronze rows for offsets already written.
 
+The active Databricks Bronze task uses:
+
+    databricks/src/bronze/bronze_ingestion_flow.py
+
 The old hard-coded Bronze ingestion flow has been preserved as a smoke-test asset:
 
     databricks/src/bronze/bronze_smoke_ingestion_flow.py
 
-The active Databricks Bronze task now uses:
+The Databricks bundle currently receives the Redpanda bootstrap server from the staging bundle variable:
 
-    databricks/src/bronze/bronze_ingestion_flow.py
+    kafka_bootstrap_servers
+
+For the current staging proof, that value is configured in:
+
+    databricks/databricks.yml
+
+The intended future improvement is for `platform.sh` to resolve the Redpanda public IP from Azure and pass it into the Databricks bundle run dynamically. Do not replace the working staging value with a placeholder unless the bundle run override path has been verified.
 
 Expected successful Bronze task output includes:
 
@@ -612,7 +622,7 @@ Expected successful Bronze task output includes:
     Quarantine rows written: <n>
     BRONZE INGESTION COMPLETE
 
-Future work may replace or complement this batch job with checkpointed structured streaming.  For now, the staging platform has a working operational medallion slice from controlled Worker ingestion through Redpanda into Databricks Bronze, Silver, and Gold.
+Future work may replace or complement this batch job with checkpointed structured streaming. For now, the staging platform has a working operational medallion slice from controlled Worker ingestion through Redpanda into Databricks Bronze, Silver, and Gold.
 
 ---
 
