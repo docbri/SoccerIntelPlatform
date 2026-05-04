@@ -571,35 +571,48 @@ A successful deployment is verified by:
 
 ---
 
-## Current Databricks Bronze Limitation
+## Databricks Bronze Ingestion Status
 
-The local operational ingestion path now works through Redpanda into a Bronze-shaped JSONL output:
+The staging medallion bundle now has a working batch Redpanda-to-Bronze path.
+
+Current operational state:
 
     Platform.Worker
         → Azure Redpanda topic soccer.raw.ingestion.dev
-        → Platform.BronzeConsumer
-        → localdata/bronze/raw_ingestion_events.jsonl
-
-The current staging Databricks medallion bundle still uses a hard-coded Bronze ingestion flow.
-
-Current Databricks state:
-
-    Databricks bundle
-        → hard-coded Bronze smoke data
+        → Databricks Bronze batch ingestion
         → soccerintel_staging.bronze.raw_ingestion_events
         → Silver transformation
         → Gold current_league_status
 
-Next target state:
+The Bronze Databricks task reads available Kafka messages from the configured Redpanda topic, parses the JSON `IngestionEnvelope`, preserves Kafka transport metadata, appends accepted records to Unity Catalog Bronze, and routes invalid records to the Bronze quarantine table.
 
-    Platform.Worker
-        → Azure Redpanda topic soccer.raw.ingestion.dev
-        → Databricks Bronze ingestion
-        → soccerintel_staging.bronze.raw_ingestion_events
-        → Silver transformation
-        → Gold current_league_status
+The current Bronze task is batch-oriented, not long-running streaming.  It reads from:
 
-Until the Databricks Redpanda-to-Bronze path is implemented, the Databricks Bronze job output should be treated as a smoke-test/medallion-shape validation path rather than proof that live Redpanda messages are populating Unity Catalog Bronze.
+    startingOffsets = earliest
+    endingOffsets = latest
+
+and uses Kafka transport metadata for deduplication:
+
+    kafka_topic | kafka_partition | kafka_offset
+
+This means repeated bundle runs can safely re-read the topic while avoiding duplicate Bronze rows for offsets already written.
+
+The old hard-coded Bronze ingestion flow has been preserved as a smoke-test asset:
+
+    databricks/src/bronze/bronze_smoke_ingestion_flow.py
+
+The active Databricks Bronze task now uses:
+
+    databricks/src/bronze/bronze_ingestion_flow.py
+
+Expected successful Bronze task output includes:
+
+    BRONZE KAFKA INGESTION STARTED
+    Accepted rows written: <n>
+    Quarantine rows written: <n>
+    BRONZE INGESTION COMPLETE
+
+Future work may replace or complement this batch job with checkpointed structured streaming.  For now, the staging platform has a working operational medallion slice from controlled Worker ingestion through Redpanda into Databricks Bronze, Silver, and Gold.
 
 ---
 
@@ -640,3 +653,14 @@ The local Bronze consumer path is considered operational when:
 - `localdata/bronze/raw_ingestion_events.jsonl` contains a row for the consumed Kafka offset.
 - `./scripts/platform.sh bronze status` reports the running process and recent logs.
 - `./scripts/platform.sh bronze stop` stops the consumer without tearing down the platform.
+
+The Databricks Bronze ingestion path is considered operational when:
+
+- `./scripts/platform.sh ingest once` publishes an envelope to `soccer.raw.ingestion.dev`.
+- `./scripts/platform.sh resume` validates and deploys the Databricks bundle.
+- The Databricks Bronze task reports `BRONZE KAFKA INGESTION STARTED`.
+- The Databricks Bronze task writes accepted rows from Redpanda into `soccerintel_staging.bronze.raw_ingestion_events`.
+- The Databricks Bronze task reports `BRONZE INGESTION COMPLETE`.
+- The Silver task reports `SILVER TRANSFORMATION COMPLETE`.
+- The Gold task reports `GOLD TRANSFORMATION COMPLETE`.
+- `./scripts/platform.sh verify` completes successfully.
