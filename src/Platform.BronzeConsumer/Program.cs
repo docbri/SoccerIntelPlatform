@@ -8,6 +8,7 @@ var configuration = new ConfigurationBuilder()
     .SetBasePath(AppContext.BaseDirectory)
     .AddJsonFile("appsettings.json", optional: false, reloadOnChange: false)
     .AddJsonFile($"appsettings.{environmentName}.json", optional: true, reloadOnChange: false)
+    .AddEnvironmentVariables()
     .Build();
 
 var options = configuration

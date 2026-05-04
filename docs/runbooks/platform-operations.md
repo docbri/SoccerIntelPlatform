@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Describe how to plan, bring up, verify, resume, operate ingestion, tear down, and explicitly reset the SoccerIntelPlatform staging platform from source control.
+Describe how to plan, bring up, verify, resume, operate ingestion, operate local Bronze consumption, tear down, and explicitly reset the SoccerIntelPlatform staging platform from source control.
 
 The public operational entry point is:
 
@@ -24,6 +24,9 @@ The current staging lifecycle is:
     ./scripts/platform.sh ingest poll --pph 1
     ./scripts/platform.sh ingest status
     ./scripts/platform.sh ingest stop
+    ./scripts/platform.sh bronze consume
+    ./scripts/platform.sh bronze status
+    ./scripts/platform.sh bronze stop
     ./scripts/platform.sh down
     ./scripts/platform.sh reset
 
@@ -37,6 +40,9 @@ Meaning:
 - `ingest poll --pph <n>` starts Platform.Worker in background polling mode, using a bounded polls-per-hour setting.
 - `ingest status` reports whether background ingestion polling is running and shows recent worker logs.
 - `ingest stop` stops background ingestion polling without tearing down the platform.
+- `bronze consume` starts the local .NET Bronze consumer, subscribes to the Azure Redpanda topic, and writes accepted rows/quarantine rows to local JSONL files.
+- `bronze status` reports whether the Bronze consumer is running and shows recent logs plus the tail of the local Bronze/quarantine output files.
+- `bronze stop` stops the local Bronze consumer without tearing down Redpanda, Databricks, Platform.Api, or staging infrastructure.
 - `down` performs ordinary teardown of bundle resources, Redpanda, and staging infrastructure.
 - `reset` is an explicitly destructive staging reset. It requires `CONFIRM_DESTRUCTIVE_RESET=destroy-staging-data`, delegates to the teardown path, and relies on `destroy-staging.sh` to perform project catalog and Unity Catalog storage cleanup before OpenTofu destroy.
 
@@ -376,7 +382,98 @@ Do not delete the ledger casually when using a real API key, because it exists t
 
 ---
 
-## 10. Tear down staging
+## 10. Local Bronze consumption operations
+
+The Bronze commands run `Platform.BronzeConsumer` from the local machine and consume from the Azure Redpanda VM.
+
+This is the current operational bridge between Redpanda and Bronze-shaped storage:
+
+    Platform.Worker
+        → Azure Redpanda topic soccer.raw.ingestion.dev
+        → Platform.BronzeConsumer
+        → localdata/bronze/raw_ingestion_events.jsonl
+        → localdata/quarantine/raw_ingestion_quarantine.jsonl
+
+The local Bronze consumer is not yet the final Databricks Bronze ingestion path.  It is the operational proof that the Worker envelope contract, Kafka transport, validation, idempotency, Bronze row mapping, and quarantine handling work end-to-end before replacing the hard-coded Databricks Bronze smoke path.
+
+### Start the Bronze consumer
+
+Run:
+
+    ./scripts/platform.sh bronze consume
+
+This command:
+
+- Resolves the Azure Redpanda public endpoint.
+- Verifies TCP connectivity to Redpanda on port `9092`.
+- Runs `src/Platform.BronzeConsumer/Platform.BronzeConsumer.csproj` in the background.
+- Subscribes to `soccer.raw.ingestion.dev`.
+- Writes valid Bronze rows to `localdata/bronze/raw_ingestion_events.jsonl`.
+- Writes invalid or malformed messages to `localdata/quarantine/raw_ingestion_quarantine.jsonl`.
+- Stores runtime state under `.runtime/platform-bronze-consumer.env`.
+- Stores logs under `.runtime/platform-bronze-consumer.log`.
+
+Expected successful output includes:
+
+    Starting Bronze consumer.
+    Kafka bootstrap server: <redpanda-ip>:9092
+    Topic name: soccer.raw.ingestion.dev
+    Bronze consumer started with PID <pid>.
+
+### Check Bronze consumer status
+
+Run:
+
+    ./scripts/platform.sh bronze status
+
+This command reports:
+
+- Whether the Bronze consumer is running.
+- The stored process ID, if present.
+- The most recent Bronze consumer configuration.
+- The tail of `.runtime/platform-bronze-consumer.log`.
+- The tail of `localdata/bronze/raw_ingestion_events.jsonl`.
+- The tail of `localdata/quarantine/raw_ingestion_quarantine.jsonl`.
+
+### Stop the Bronze consumer
+
+Run:
+
+    ./scripts/platform.sh bronze stop
+
+This stops the local Bronze consumer without tearing down the platform.
+
+Use this after local Redpanda-to-Bronze testing is complete.
+
+### Prove Worker → Redpanda → Bronze
+
+Run:
+
+    ./scripts/platform.sh bronze consume
+    sleep 5
+    ./scripts/platform.sh ingest once
+    sleep 5
+    ./scripts/platform.sh bronze status
+    ./scripts/platform.sh bronze stop
+
+Expected successful evidence includes:
+
+    Published envelope to Kafka topic soccer.raw.ingestion.dev at offset <n>
+    Wrote Bronze row for topic soccer.raw.ingestion.dev partition 0 offset <n>.
+
+The same Kafka offset should appear in the worker publish output, the Bronze consumer log, and the local Bronze JSONL row.
+
+### Bronze idempotency rule
+
+The local Bronze consumer uses Kafka transport identity for idempotency:
+
+    kafka_topic | kafka_partition | kafka_offset
+
+This is intentional.  Bronze should preserve ingested transport events.  Business-level deduplication belongs later in Silver or Gold, not in the raw Bronze capture path.
+
+---
+
+## 11. Tear down staging
 
 Run from the repository root:
 
@@ -405,7 +502,7 @@ Do not call subordinate destroy scripts directly unless intentionally debugging 
 
 ---
 
-## 11. Destructive staging reset
+## 12. Destructive staging reset
 
 Use this only when intentionally preparing for a full rebuild rehearsal.
 
@@ -474,27 +571,35 @@ A successful deployment is verified by:
 
 ---
 
-## Current Bronze Limitation
+## Current Databricks Bronze Limitation
 
-The current staging medallion bundle still uses a hard-coded Bronze ingestion flow.
-
-The operational ingestion path now publishes messages to Azure Redpanda, but the Databricks Bronze path is not yet fully sourced from that Redpanda topic.
-
-Current operational state:
+The local operational ingestion path now works through Redpanda into a Bronze-shaped JSONL output:
 
     Platform.Worker
         → Azure Redpanda topic soccer.raw.ingestion.dev
+        → Platform.BronzeConsumer
+        → localdata/bronze/raw_ingestion_events.jsonl
+
+The current staging Databricks medallion bundle still uses a hard-coded Bronze ingestion flow.
+
+Current Databricks state:
+
+    Databricks bundle
+        → hard-coded Bronze smoke data
+        → soccerintel_staging.bronze.raw_ingestion_events
+        → Silver transformation
+        → Gold current_league_status
 
 Next target state:
 
     Platform.Worker
         → Azure Redpanda topic soccer.raw.ingestion.dev
-        → Bronze ingestion
+        → Databricks Bronze ingestion
         → soccerintel_staging.bronze.raw_ingestion_events
         → Silver transformation
         → Gold current_league_status
 
-Until the Redpanda-to-Bronze path is implemented, the Databricks Bronze job output should be treated as a smoke-test/medallion-shape validation path rather than proof that live Redpanda messages are populating Bronze.
+Until the Databricks Redpanda-to-Bronze path is implemented, the Databricks Bronze job output should be treated as a smoke-test/medallion-shape validation path rather than proof that live Redpanda messages are populating Unity Catalog Bronze.
 
 ---
 
@@ -524,3 +629,14 @@ The staging ingestion control plane is considered operational when:
 - `./scripts/platform.sh ingest status` reports the running worker process and recent logs.
 - `./scripts/platform.sh ingest stop` stops the worker without tearing down the platform.
 - Placeholder-key ingestion runs do not create or increment the API call ledger.
+
+The local Bronze consumer path is considered operational when:
+
+- `./scripts/platform.sh bronze consume` resolves the Azure Redpanda public IP.
+- `./scripts/platform.sh bronze consume` verifies TCP connectivity to Redpanda on port `9092`.
+- `./scripts/platform.sh bronze consume` starts the local Bronze consumer in the background.
+- `./scripts/platform.sh ingest once` publishes an envelope to `soccer.raw.ingestion.dev`.
+- The Bronze consumer log reports that the same Kafka offset was written to Bronze.
+- `localdata/bronze/raw_ingestion_events.jsonl` contains a row for the consumed Kafka offset.
+- `./scripts/platform.sh bronze status` reports the running process and recent logs.
+- `./scripts/platform.sh bronze stop` stops the consumer without tearing down the platform.

@@ -25,10 +25,22 @@ REDPANDA_PUBLIC_IP_NAME="${REDPANDA_PUBLIC_IP_NAME:-pip-redpanda}"
 REDPANDA_PORT="${REDPANDA_PORT:-9092}"
 
 WORKER_PROJECT="${WORKER_PROJECT:-${ROOT_DIR}/src/Platform.Worker/Platform.Worker.csproj}"
+BRONZE_CONSUMER_PROJECT="${BRONZE_CONSUMER_PROJECT:-${ROOT_DIR}/src/Platform.BronzeConsumer/Platform.BronzeConsumer.csproj}"
+
 RUNTIME_DIR="${ROOT_DIR}/.runtime"
+
 INGEST_PID_FILE="${RUNTIME_DIR}/platform-worker.pid"
 INGEST_STATE_FILE="${RUNTIME_DIR}/platform-ingest.env"
 INGEST_LOG_FILE="${RUNTIME_DIR}/platform-worker.log"
+
+BRONZE_CONSUMER_PID_FILE="${RUNTIME_DIR}/platform-bronze-consumer.pid"
+BRONZE_CONSUMER_STATE_FILE="${RUNTIME_DIR}/platform-bronze-consumer.env"
+BRONZE_CONSUMER_LOG_FILE="${RUNTIME_DIR}/platform-bronze-consumer.log"
+
+BRONZE_CONSUMER_TOPIC_NAME="${BRONZE_CONSUMER_TOPIC_NAME:-soccer.raw.ingestion.dev}"
+BRONZE_CONSUMER_GROUP_ID="${BRONZE_CONSUMER_GROUP_ID:-platform-bronze-consumer-dev}"
+BRONZE_OUTPUT_PATH="${BRONZE_OUTPUT_PATH:-${ROOT_DIR}/localdata/bronze/raw_ingestion_events.jsonl}"
+QUARANTINE_OUTPUT_PATH="${QUARANTINE_OUTPUT_PATH:-${ROOT_DIR}/localdata/quarantine/raw_ingestion_quarantine.jsonl}"
 
 API_FOOTBALL_MAX_CALLS_PER_DAY="${API_FOOTBALL_MAX_CALLS_PER_DAY:-100}"
 INGEST_DEFAULT_POLLS_PER_HOUR="${INGEST_DEFAULT_POLLS_PER_HOUR:-1}"
@@ -47,6 +59,10 @@ Usage:
   ./scripts/platform.sh ingest poll [--pph 1|--polls-per-hour 1] [--max-calls-per-day 100] [--bootstrap-server host:port]
   ./scripts/platform.sh ingest stop
   ./scripts/platform.sh ingest status
+  
+  ./scripts/platform.sh bronze consume [--bootstrap-server host:port]
+  ./scripts/platform.sh bronze stop
+  ./scripts/platform.sh bronze status
 
 Environment overrides:
   DATABRICKS_TARGET                         Default: staging
@@ -67,6 +83,11 @@ Environment overrides:
   REDPANDA_BOOTSTRAP_SERVER                 Default: resolved from Azure public IP pip-redpanda
 
   WORKER_PROJECT                            Default: src/Platform.Worker/Platform.Worker.csproj
+  BRONZE_CONSUMER_PROJECT                   Default: src/Platform.BronzeConsumer/Platform.BronzeConsumer.csproj
+  BRONZE_CONSUMER_TOPIC_NAME                Default: soccer.raw.ingestion.dev
+  BRONZE_CONSUMER_GROUP_ID                  Default: platform-bronze-consumer-dev
+  BRONZE_OUTPUT_PATH                        Default: localdata/bronze/raw_ingestion_events.jsonl
+  QUARANTINE_OUTPUT_PATH                    Default: localdata/quarantine/raw_ingestion_quarantine.jsonl
   API_FOOTBALL_MAX_CALLS_PER_DAY            Default: 100
   INGEST_DEFAULT_POLLS_PER_HOUR             Default: 1
 EOF_USAGE
@@ -121,6 +142,22 @@ worker_pid_is_running() {
   fi
 
   pid="$(cat "${INGEST_PID_FILE}")"
+
+  if [[ -z "${pid}" ]]; then
+    return 1
+  fi
+
+  kill -0 "${pid}" >/dev/null 2>&1
+}
+
+bronze_consumer_pid_is_running() {
+  local pid
+
+  if [[ ! -f "${BRONZE_CONSUMER_PID_FILE}" ]]; then
+    return 1
+  fi
+
+  pid="$(cat "${BRONZE_CONSUMER_PID_FILE}")"
 
   if [[ -z "${pid}" ]]; then
     return 1
@@ -858,6 +895,163 @@ ingest_platform() {
   esac
 }
 
+bronze_consume() {
+  local bootstrap_server
+
+  parse_ingest_options "$@"
+
+  require_command dotnet
+  require_file "${BRONZE_CONSUMER_PROJECT}"
+  ensure_runtime_dir
+
+  bootstrap_server="$(resolve_redpanda_bootstrap_server)"
+  verify_tcp_endpoint "${bootstrap_server}"
+
+  if bronze_consumer_pid_is_running; then
+    echo "ERROR: Bronze consumer already appears to be running." >&2
+    echo "PID file: ${BRONZE_CONSUMER_PID_FILE}" >&2
+    echo "Run './scripts/platform.sh bronze status' or './scripts/platform.sh bronze stop'." >&2
+    exit 1
+  fi
+
+  echo "Starting Bronze consumer."
+  echo "Bronze consumer project: ${BRONZE_CONSUMER_PROJECT}"
+  echo "Kafka bootstrap server: ${bootstrap_server}"
+  echo "Topic name: ${BRONZE_CONSUMER_TOPIC_NAME}"
+  echo "Consumer group: ${BRONZE_CONSUMER_GROUP_ID}"
+  echo "Bronze output path: ${BRONZE_OUTPUT_PATH}"
+  echo "Quarantine output path: ${QUARANTINE_OUTPUT_PATH}"
+  echo "Log file: ${BRONZE_CONSUMER_LOG_FILE}"
+
+  BronzeConsumer__BootstrapServers="${bootstrap_server}" \
+  BronzeConsumer__TopicName="${BRONZE_CONSUMER_TOPIC_NAME}" \
+  BronzeConsumer__ConsumerGroupId="${BRONZE_CONSUMER_GROUP_ID}" \
+  BronzeConsumer__BronzeOutputPath="${BRONZE_OUTPUT_PATH}" \
+  BronzeConsumer__QuarantineOutputPath="${QUARANTINE_OUTPUT_PATH}" \
+  nohup dotnet run \
+    --project "${BRONZE_CONSUMER_PROJECT}" \
+    >"${BRONZE_CONSUMER_LOG_FILE}" 2>&1 &
+
+  echo "$!" > "${BRONZE_CONSUMER_PID_FILE}"
+
+  cat > "${BRONZE_CONSUMER_STATE_FILE}" <<EOF_BRONZE_CONSUMER_STATE
+MODE=consume
+KAFKA_BOOTSTRAP_SERVER=${bootstrap_server}
+TOPIC_NAME=${BRONZE_CONSUMER_TOPIC_NAME}
+CONSUMER_GROUP_ID=${BRONZE_CONSUMER_GROUP_ID}
+BRONZE_OUTPUT_PATH=${BRONZE_OUTPUT_PATH}
+QUARANTINE_OUTPUT_PATH=${QUARANTINE_OUTPUT_PATH}
+STARTED_AT_UTC=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+BRONZE_CONSUMER_PROJECT=${BRONZE_CONSUMER_PROJECT}
+LOG_FILE=${BRONZE_CONSUMER_LOG_FILE}
+PID_FILE=${BRONZE_CONSUMER_PID_FILE}
+EOF_BRONZE_CONSUMER_STATE
+
+  echo "Bronze consumer started with PID $(cat "${BRONZE_CONSUMER_PID_FILE}")."
+}
+
+bronze_stop() {
+  local pid
+
+  if ! bronze_consumer_pid_is_running; then
+    echo "Bronze consumer is not running."
+    rm -f "${BRONZE_CONSUMER_PID_FILE}"
+    return
+  fi
+
+  pid="$(cat "${BRONZE_CONSUMER_PID_FILE}")"
+
+  echo "Stopping Bronze consumer PID ${pid}..."
+  kill "${pid}"
+
+  for attempt in {1..10}; do
+    if ! kill -0 "${pid}" >/dev/null 2>&1; then
+      rm -f "${BRONZE_CONSUMER_PID_FILE}"
+      echo "Bronze consumer stopped."
+      return
+    fi
+
+    sleep 1
+  done
+
+  echo "WARNING: Bronze consumer did not stop after graceful termination. Sending SIGKILL." >&2
+  kill -9 "${pid}" >/dev/null 2>&1 || true
+  rm -f "${BRONZE_CONSUMER_PID_FILE}"
+  echo "Bronze consumer stopped."
+}
+
+bronze_status() {
+  echo "Bronze consumer status"
+  echo "----------------------"
+
+  if bronze_consumer_pid_is_running; then
+    echo "State: running"
+    echo "PID: $(cat "${BRONZE_CONSUMER_PID_FILE}")"
+  else
+    echo "State: stopped"
+
+    if [[ -f "${BRONZE_CONSUMER_PID_FILE}" ]]; then
+      echo "Stale PID file found: ${BRONZE_CONSUMER_PID_FILE}"
+    fi
+  fi
+
+  if [[ -f "${BRONZE_CONSUMER_STATE_FILE}" ]]; then
+    echo
+    echo "Last Bronze consumer configuration:"
+    cat "${BRONZE_CONSUMER_STATE_FILE}"
+  fi
+
+  if [[ -f "${BRONZE_CONSUMER_LOG_FILE}" ]]; then
+    echo
+    echo "Recent Bronze consumer log:"
+    tail -n 25 "${BRONZE_CONSUMER_LOG_FILE}"
+  fi
+
+  echo
+  echo "Bronze output:"
+  if [[ -f "${BRONZE_OUTPUT_PATH}" ]]; then
+    tail -n 5 "${BRONZE_OUTPUT_PATH}"
+  else
+    echo "No Bronze output file found: ${BRONZE_OUTPUT_PATH}"
+  fi
+
+  echo
+  echo "Quarantine output:"
+  if [[ -f "${QUARANTINE_OUTPUT_PATH}" ]]; then
+    tail -n 5 "${QUARANTINE_OUTPUT_PATH}"
+  else
+    echo "No quarantine output file found: ${QUARANTINE_OUTPUT_PATH}"
+  fi
+}
+
+bronze_platform() {
+  local bronze_action="${1:-}"
+
+  if [[ $# -gt 0 ]]; then
+    shift
+  fi
+
+  case "${bronze_action}" in
+    consume)
+      bronze_consume "$@"
+      ;;
+    stop)
+      bronze_stop
+      ;;
+    status)
+      bronze_status
+      ;;
+    -h|--help|help|"")
+      usage
+      ;;
+    *)
+      echo "ERROR: Unknown bronze action: ${bronze_action}" >&2
+      usage
+      exit 1
+      ;;
+  esac
+}
+
 main() {
   local action="${1:-}"
 
@@ -886,6 +1080,9 @@ main() {
       ;;
     ingest)
       ingest_platform "$@"
+      ;;
+    bronze)
+      bronze_platform "$@"
       ;;
     -h|--help|help|"")
       usage

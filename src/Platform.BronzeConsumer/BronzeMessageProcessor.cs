@@ -69,7 +69,7 @@ public sealed class BronzeMessageProcessor(
                 $"Envelope validation failure: {string.Join("; ", validationResult.Errors)}");
         }
 
-        var idempotencyKey = IdempotencyKeyBuilder.Build(envelope);
+        var idempotencyKey = IdempotencyKeyBuilder.Build(envelope, result);
 
         if (idempotencyStore.HasSeen(idempotencyKey))
         {
