@@ -7,10 +7,10 @@ Describe the first operational pattern for publishing a curated Gold dataset fro
 ## Dataset
 
 Source:
-- `gold.current_league_status`
+- `soccerintel_staging.gold.current_league_status`
 
 Target:
-- `SOCCER_INTEL.CURATED.CURRENT_LEAGUE_STATUS`
+- `SOCCERINTEL_STAGING.GOLD.CURRENT_LEAGUE_STATUS`
 
 ## Initial Mode
 
@@ -19,7 +19,7 @@ Target:
 
 ## Operational Steps
 
-1. Validate that `gold.current_league_status` is up to date.
+1. Validate that `soccerintel_staging.gold.current_league_status` is up to date.
 2. Run the Databricks publish job.
 3. Confirm row count in Snowflake target table.
 4. Confirm sample rows match the Databricks Gold source.

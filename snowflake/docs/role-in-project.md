@@ -12,7 +12,7 @@ Curated datasets arrive from Databricks Gold outputs.
 
 ## First Target Dataset
 
-- `SOCCER_INTEL.CURATED.CURRENT_LEAGUE_STATUS`
+- `SOCCERINTEL_STAGING.GOLD.CURRENT_LEAGUE_STATUS`
 
 ## Responsibilities
 

@@ -14,11 +14,11 @@ Define the first curated data handoff from the Databricks-centered platform core
 
 Databricks source:
 
-- `gold.current_league_status`
+- `soccerintel_staging.gold.current_league_status`
 
 Snowflake target:
 
-- `SOCCER_INTEL.CURATED.CURRENT_LEAGUE_STATUS`
+- `SOCCERINTEL_STAGING.GOLD.CURRENT_LEAGUE_STATUS`
 
 ## Handoff Principle
 

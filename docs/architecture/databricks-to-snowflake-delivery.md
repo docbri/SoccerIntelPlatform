@@ -7,10 +7,10 @@ Define how curated Gold datasets are delivered from Databricks into Snowflake in
 ## First Delivery Target
 
 Databricks source:
-- `gold.current_league_status`
+- `soccerintel_staging.gold.current_league_status`
 
 Snowflake target:
-- `SOCCER_INTEL.CURATED.CURRENT_LEAGUE_STATUS`
+- `SOCCERINTEL_STAGING.GOLD.CURRENT_LEAGUE_STATUS`
 
 ## Delivery Principle
 
@@ -22,7 +22,7 @@ Snowflake receives a curated dataset, not raw data and not transformation instru
 ## Initial Delivery Pattern
 
 - scheduled Databricks job
-- Spark reads `gold.current_league_status`
+- Spark reads `soccerintel_staging.gold.current_league_status`
 - Snowflake Spark Connector writes the dataset to Snowflake
 - first version uses full refresh / overwrite semantics
 

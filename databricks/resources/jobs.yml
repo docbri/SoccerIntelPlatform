@@ -63,3 +63,26 @@ resources:
               - ${var.silver_schema}
               - "--gold_schema"
               - ${var.gold_schema}
+
+        - task_key: publish_snowflake
+          depends_on:
+            - task_key: gold
+          job_cluster_key: medallion_cluster
+          libraries:
+            - maven:
+                coordinates: net.snowflake:spark-snowflake_2.13:3.1.8
+          spark_python_task:
+            python_file: ../src/gold/publish_current_league_status_to_snowflake.py
+            parameters:
+              - "--catalog"
+              - ${var.catalog}
+              - "--gold_schema"
+              - ${var.gold_schema}
+              - "--snowflake_database"
+              - ${var.snowflake_database}
+              - "--snowflake_schema"
+              - ${var.snowflake_schema}
+              - "--snowflake_table"
+              - ${var.snowflake_table}
+              - "--snowflake_secret_scope"
+              - ${var.snowflake_secret_scope}

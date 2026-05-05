@@ -19,6 +19,14 @@ variables:
     description: Kafka/Redpanda bootstrap server for Bronze ingestion
   kafka_topic_name:
     description: Kafka/Redpanda topic name for raw ingestion events
+  snowflake_database:
+    description: Snowflake database for curated Gold publication
+  snowflake_schema:
+    description: Snowflake schema for curated Gold publication
+  snowflake_table:
+    description: Snowflake table for current league status publication
+  snowflake_secret_scope:
+    description: Databricks secret scope containing Snowflake connection values
 
 targets:
   staging:
@@ -35,3 +43,7 @@ targets:
       gold_schema: gold
       workspace_root: /Workspace/Users/drbrianmyers@outlook.com/soccerintel
       kafka_topic_name: soccer.raw.ingestion.dev
+      snowflake_database: SOCCERINTEL_STAGING
+      snowflake_schema: GOLD
+      snowflake_table: CURRENT_LEAGUE_STATUS
+      snowflake_secret_scope: soccerintel-staging-snowflake

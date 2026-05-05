@@ -6,7 +6,7 @@ Snowflake receives curated data products from Databricks Gold for BI fulfillment
 
 ## First Delivered Dataset
 
-- `SOCCER_INTEL.CURATED.CURRENT_LEAGUE_STATUS`
+- `SOCCERINTEL_STAGING.GOLD.CURRENT_LEAGUE_STATUS`
 
 ## Delivery Mode
 
