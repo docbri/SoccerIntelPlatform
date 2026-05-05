@@ -156,6 +156,7 @@ It performs the following high-level sequence:
 - Applies Databricks Unity Catalog grants when the CI grant principal is available.
 - Verifies the Unity Catalog catalog and schemas.
 - Deploys Platform.Api to the App Service staging slot.
+- Configures Platform.Api staging settings from OpenTofu outputs.
 - Brings up Redpanda.
 - Validates the Databricks bundle using the current workspace profile.
 - Deploys the Databricks bundle using the current workspace profile.
@@ -386,7 +387,7 @@ Do not delete the ledger casually when using a real API key, because it exists t
 
 The Bronze commands run `Platform.BronzeConsumer` from the local machine and consume from the Azure Redpanda VM.
 
-This is the current operational bridge between Redpanda and Bronze-shaped storage:
+This is a local operational proof path for the Worker envelope contract, Kafka transport, validation, idempotency, Bronze row mapping, and quarantine handling:
 
     Platform.Worker
         → Azure Redpanda topic soccer.raw.ingestion.dev
@@ -394,7 +395,7 @@ This is the current operational bridge between Redpanda and Bronze-shaped storag
         → localdata/bronze/raw_ingestion_events.jsonl
         → localdata/quarantine/raw_ingestion_quarantine.jsonl
 
-The local Bronze consumer is not yet the final Databricks Bronze ingestion path.  It is the operational proof that the Worker envelope contract, Kafka transport, validation, idempotency, Bronze row mapping, and quarantine handling work end-to-end before replacing the hard-coded Databricks Bronze smoke path.
+The main staging medallion path now uses the Databricks Bronze batch ingestion task.  The local Bronze consumer remains useful for fast local debugging and contract validation without running the full Databricks bundle.
 
 ### Start the Bronze consumer
 
@@ -445,7 +446,7 @@ This stops the local Bronze consumer without tearing down the platform.
 
 Use this after local Redpanda-to-Bronze testing is complete.
 
-### Prove Worker → Redpanda → Bronze
+### Prove Worker → Redpanda → local Bronze
 
 Run:
 
@@ -565,9 +566,73 @@ and deploys the generated zip package to:
 
     app-soccerintel-platform-api/staging
 
+The deployment script also configures Platform.Api staging settings from OpenTofu outputs, restarts the staging slot, waits for `/ready`, and waits for the Gold-backed league status endpoint.
+
 A successful deployment is verified by:
 
     https://app-soccerintel-platform-api-staging.azurewebsites.net/health
+    https://app-soccerintel-platform-api-staging.azurewebsites.net/ready
+    https://app-soccerintel-platform-api-staging.azurewebsites.net/league-status/current?leagueId=135&season=2025
+
+---
+
+## Platform.Api Databricks SQL Serving Path
+
+Platform.Api reads the staging Gold table through the Databricks Statement Execution API.
+
+The serving path is:
+
+    Platform.Api staging slot
+        → Databricks SQL Statement Execution API
+        → OpenTofu-managed Databricks SQL warehouse
+        → soccerintel_staging.gold.current_league_status
+
+The SQL warehouse is managed by OpenTofu as:
+
+    databricks_sql_endpoint.platform_api
+
+The warehouse ID is exposed through OpenTofu output:
+
+    databricks_sql_warehouse_id
+
+`deploy-platform-api.sh` configures the Platform.Api staging slot from OpenTofu outputs.  It sets:
+
+    DatabricksSql__WorkspaceUrl
+    DatabricksSql__WarehouseId
+    DatabricksSql__Catalog
+    DatabricksSql__Schema
+    DatabricksSql__CurrentLeagueStatusObjectName
+    DatabricksSql__AuthenticationType
+    Readiness__DatabricksTimeoutSeconds
+
+The Databricks SQL access token is treated as a secret.  It is not stored in source control.
+
+During the first local deployment proof, the token can be supplied through:
+
+    DATABRICKS_SQL_ACCESS_TOKEN
+
+If that environment variable is not present, `deploy-platform-api.sh` preserves the existing App Service setting:
+
+    DatabricksSql__AccessToken
+
+This allows later deployments to refresh non-secret settings from OpenTofu without requiring the developer shell to keep the token loaded.
+
+The staging SQL warehouse can be cold after deployment or after auto-stop.  To avoid declaring deployment complete too early, `deploy-platform-api.sh` waits for both:
+
+    /ready
+    /league-status/current?leagueId=135&season=2025
+
+The deployment script completes only after both endpoints return HTTP 200.
+
+The readiness timeout is configurable through:
+
+    Readiness__DatabricksTimeoutSeconds
+
+The staging value is currently:
+
+    60
+
+This accounts for Databricks SQL warehouse cold-start behavior.  After the warehouse is warm, Databricks-backed API requests should complete much faster.
 
 ---
 
@@ -682,3 +747,14 @@ The Databricks Bronze ingestion path is considered operational when:
 - The Silver task reports `SILVER TRANSFORMATION COMPLETE`.
 - The Gold task reports `GOLD TRANSFORMATION COMPLETE`.
 - `./scripts/platform.sh verify` completes successfully.
+
+The Platform.Api Databricks SQL serving path is considered operational when:
+
+- OpenTofu manages the Databricks SQL warehouse as `databricks_sql_endpoint.platform_api`.
+- OpenTofu exposes `databricks_sql_warehouse_id`.
+- `deploy-platform-api.sh` configures Platform.Api staging settings from OpenTofu outputs.
+- `deploy-platform-api.sh` preserves the existing Databricks SQL access token when `DATABRICKS_SQL_ACCESS_TOKEN` is not present.
+- `deploy-platform-api.sh` waits for `/ready` to return HTTP 200.
+- `deploy-platform-api.sh` waits for `/league-status/current?leagueId=135&season=2025` to return HTTP 200.
+- `/ready` reports the Databricks dependency as healthy.
+- `/league-status/current?leagueId=135&season=2025` returns Gold-backed data from `soccerintel_staging.gold.current_league_status`.

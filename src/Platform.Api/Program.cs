@@ -14,6 +14,10 @@ builder.Services
     .AddOptions<DatabricksSqlOptions>()
     .Bind(builder.Configuration.GetSection(DatabricksSqlOptions.SectionName));
 
+builder.Services
+    .AddOptions<ReadinessOptions>()
+    .Bind(builder.Configuration.GetSection(ReadinessOptions.SectionName));
+
 // Http client for real Databricks SQL client
 builder.Services.AddHttpClient<DatabricksStatementExecutionSqlClient>();
 

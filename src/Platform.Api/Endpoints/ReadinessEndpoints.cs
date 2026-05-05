@@ -1,17 +1,18 @@
+using Microsoft.Extensions.Options;
 using Platform.Api.Contracts;
 using Platform.Api.Infrastructure.Databricks;
+using Platform.Api.Options;
 
 namespace Platform.Api.Endpoints;
 
 public static class ReadinessEndpoints
 {
-    private static readonly TimeSpan ReadinessTimeout = TimeSpan.FromSeconds(5);
-
     public static IEndpointRouteBuilder MapReadinessEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapGet("/ready",
                 async (
                     IDatabricksSqlClient databricksSqlClient,
+                    IOptions<ReadinessOptions> readinessOptions,
                     ILoggerFactory loggerFactory,
                     CancellationToken cancellationToken) =>
                 {
@@ -20,6 +21,7 @@ public static class ReadinessEndpoints
 
                     var databricksCheck = await RunDatabricksCheckAsync(
                         databricksSqlClient,
+                        readinessOptions.Value,
                         logger,
                         cancellationToken);
 
@@ -50,11 +52,15 @@ public static class ReadinessEndpoints
 
     private static async Task<ReadinessCheck> RunDatabricksCheckAsync(
         IDatabricksSqlClient client,
+        ReadinessOptions readinessOptions,
         ILogger logger,
         CancellationToken cancellationToken)
     {
+        var timeoutSeconds = Math.Max(1, readinessOptions.DatabricksTimeoutSeconds);
+        var timeout = TimeSpan.FromSeconds(timeoutSeconds);
+
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        cts.CancelAfter(ReadinessTimeout);
+        cts.CancelAfter(timeout);
 
         try
         {
@@ -63,7 +69,11 @@ public static class ReadinessEndpoints
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Readiness check failed for databricks");
+            logger.LogWarning(
+                ex,
+                "Readiness check failed for databricks after timeout of {TimeoutSeconds} seconds.",
+                timeoutSeconds);
+
             return new ReadinessCheck
             {
                 Name = "databricks",

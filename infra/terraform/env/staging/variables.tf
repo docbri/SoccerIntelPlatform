@@ -67,3 +67,18 @@ variable "databricks_gold_schema_name" {
   description = "Unity Catalog gold schema name for staging."
   type        = string
 }
+
+variable "databricks_sql_warehouse_name" {
+  description = "Name of the Databricks SQL warehouse used by Platform.Api staging."
+  type        = string
+}
+
+variable "databricks_sql_warehouse_cluster_size" {
+  description = "Cluster size for the Databricks SQL warehouse used by Platform.Api staging."
+  type        = string
+}
+
+variable "databricks_sql_warehouse_auto_stop_mins" {
+  description = "Auto-stop timeout in minutes for the Databricks SQL warehouse used by Platform.Api staging."
+  type        = number
+}

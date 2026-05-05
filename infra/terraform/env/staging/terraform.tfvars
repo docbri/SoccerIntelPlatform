@@ -14,3 +14,7 @@ databricks_catalog_name       = "soccerintel_staging"
 databricks_bronze_schema_name = "bronze"
 databricks_silver_schema_name = "silver"
 databricks_gold_schema_name   = "gold"
+
+databricks_sql_warehouse_name           = "wh-soccerintel-staging-api"
+databricks_sql_warehouse_cluster_size   = "2X-Small"
+databricks_sql_warehouse_auto_stop_mins = 10
