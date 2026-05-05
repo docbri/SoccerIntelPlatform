@@ -34,5 +34,4 @@ targets:
       silver_schema: silver
       gold_schema: gold
       workspace_root: /Workspace/Users/drbrianmyers@outlook.com/soccerintel
-      kafka_bootstrap_servers: 20.114.135.76:9092
       kafka_topic_name: soccer.raw.ingestion.dev

@@ -586,7 +586,7 @@ Current operational state:
 
 The Bronze Databricks task reads available Kafka messages from the configured Redpanda topic, parses the JSON `IngestionEnvelope`, preserves Kafka transport metadata, appends accepted records to Unity Catalog Bronze, and routes invalid records to the Bronze quarantine table.
 
-The current Bronze task is batch-oriented, not long-running streaming. It reads from:
+The current Bronze task is batch-oriented, not long-running streaming.  It reads from:
 
     startingOffsets = earliest
     endingOffsets = latest
@@ -605,15 +605,22 @@ The old hard-coded Bronze ingestion flow has been preserved as a smoke-test asse
 
     databricks/src/bronze/bronze_smoke_ingestion_flow.py
 
-The Databricks bundle currently receives the Redpanda bootstrap server from the staging bundle variable:
+The Databricks bundle defines the Redpanda bootstrap server through the bundle variable:
 
     kafka_bootstrap_servers
 
-For the current staging proof, that value is configured in:
+The Redpanda bootstrap server is not hard-coded in source-controlled Databricks configuration.  During normal platform operations, `platform.sh` resolves the current Azure Redpanda public IP from `pip-redpanda`, verifies TCP connectivity to `<ip>:9092`, and writes the resolved values to:
 
-    databricks/databricks.yml
+    databricks/.databricks/bundle/staging/variable-overrides.json
 
-The intended future improvement is for `platform.sh` to resolve the Redpanda public IP from Azure and pass it into the Databricks bundle run dynamically. Do not replace the working staging value with a placeholder unless the bundle run override path has been verified.
+The override file supplies:
+
+    kafka_bootstrap_servers
+    kafka_topic_name
+
+The bundle is then validated and deployed with those resolved values.  This matters because the Redpanda bootstrap server is embedded into the deployed Databricks job task parameters.
+
+The generated override file is runtime state under `.databricks`; it should not be treated as source-controlled platform configuration.
 
 Expected successful Bronze task output includes:
 
@@ -622,7 +629,7 @@ Expected successful Bronze task output includes:
     Quarantine rows written: <n>
     BRONZE INGESTION COMPLETE
 
-Future work may replace or complement this batch job with checkpointed structured streaming. For now, the staging platform has a working operational medallion slice from controlled Worker ingestion through Redpanda into Databricks Bronze, Silver, and Gold.
+Future work may replace or complement this batch job with checkpointed structured streaming.  For now, the staging platform has a working operational medallion slice from controlled Worker ingestion through Redpanda into Databricks Bronze, Silver, and Gold.
 
 ---
 
@@ -667,6 +674,7 @@ The local Bronze consumer path is considered operational when:
 The Databricks Bronze ingestion path is considered operational when:
 
 - `./scripts/platform.sh ingest once` publishes an envelope to `soccer.raw.ingestion.dev`.
+- `./scripts/platform.sh resume` resolves the Azure Redpanda public IP and writes the Databricks bundle variable override before validating and deploying the bundle.
 - `./scripts/platform.sh resume` validates and deploys the Databricks bundle.
 - The Databricks Bronze task reports `BRONZE KAFKA INGESTION STARTED`.
 - The Databricks Bronze task writes accepted rows from Redpanda into `soccerintel_staging.bronze.raw_ingestion_events`.

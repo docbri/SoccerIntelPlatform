@@ -337,6 +337,8 @@ run_databricks_bundle_validate() {
   require_command databricks
   require_dir "${DATABRICKS_DIR}"
 
+  write_databricks_bundle_variable_overrides
+
   echo "Validating Databricks bundle for target: ${TARGET}"
 
   (
@@ -349,12 +351,39 @@ run_databricks_bundle_deploy() {
   require_command databricks
   require_dir "${DATABRICKS_DIR}"
 
+  write_databricks_bundle_variable_overrides
+
   echo "Deploying Databricks bundle for target: ${TARGET}"
 
   (
     cd "${DATABRICKS_DIR}"
     run_with_current_databricks_profile databricks bundle deploy -t "${TARGET}"
   )
+}
+
+write_databricks_bundle_variable_overrides() {
+  local bootstrap_server
+  local overrides_dir
+  local overrides_file
+
+  bootstrap_server="$(resolve_redpanda_bootstrap_server)"
+  verify_tcp_endpoint "${bootstrap_server}"
+
+  overrides_dir="${DATABRICKS_DIR}/.databricks/bundle/${TARGET}"
+  overrides_file="${overrides_dir}/variable-overrides.json"
+
+  mkdir -p "${overrides_dir}"
+
+  cat > "${overrides_file}" <<EOF_DATABRICKS_VARIABLE_OVERRIDES
+{
+  "kafka_bootstrap_servers": "${bootstrap_server}",
+  "kafka_topic_name": "${BRONZE_CONSUMER_TOPIC_NAME}"
+}
+EOF_DATABRICKS_VARIABLE_OVERRIDES
+
+  echo "Wrote Databricks bundle variable overrides: ${overrides_file}"
+  echo "Kafka bootstrap server: ${bootstrap_server}"
+  echo "Kafka topic name: ${BRONZE_CONSUMER_TOPIC_NAME}"
 }
 
 run_databricks_bundle_run() {
