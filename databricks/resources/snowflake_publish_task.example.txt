@@ -1,0 +1,43 @@
+# Snowflake publication task example
+#
+# This file is intentionally not included by databricks/databricks.yml.
+# Activate this after a Snowflake account exists, the Snowflake foundation SQL
+# has been applied, and the Databricks secret scope has been populated.
+#
+# Expected prerequisite:
+#
+#   Databricks secret scope:
+#     soccerintel-staging-snowflake
+#
+#   Secret keys:
+#     url
+#     user
+#     private_key
+#     role
+#     warehouse
+#
+# Add this task to resources/jobs.yml after the gold task when Snowflake
+# publication is ready to become part of the active medallion job.
+
+- task_key: publish_snowflake
+  depends_on:
+    - task_key: gold
+  job_cluster_key: medallion_cluster
+  libraries:
+    - maven:
+        coordinates: net.snowflake:spark-snowflake_2.13:3.1.8
+  spark_python_task:
+    python_file: ../src/gold/publish_current_league_status_to_snowflake.py
+    parameters:
+      - "--catalog"
+      - ${var.catalog}
+      - "--gold_schema"
+      - ${var.gold_schema}
+      - "--snowflake_database"
+      - ${var.snowflake_database}
+      - "--snowflake_schema"
+      - ${var.snowflake_schema}
+      - "--snowflake_table"
+      - ${var.snowflake_table}
+      - "--snowflake_secret_scope"
+      - ${var.snowflake_secret_scope}
