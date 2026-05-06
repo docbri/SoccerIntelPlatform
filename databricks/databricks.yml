@@ -26,7 +26,7 @@ variables:
   snowflake_table:
     description: Snowflake table for current league status publication
   snowflake_secret_scope:
-    description: Databricks secret scope containing Snowflake connection values
+    description: Databricks secret scope containing Snowflake key-pair connection values
 
 targets:
   staging:

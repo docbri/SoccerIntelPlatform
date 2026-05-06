@@ -37,3 +37,4 @@ override.tf.json
 # AI helper files
 filestructure.txt
 
+.local/

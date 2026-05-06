@@ -65,7 +65,20 @@ def read_config_value(
     return None
 
 
+def normalize_private_key(private_key: str) -> str:
+    return (
+        private_key
+        .replace("-----BEGIN PRIVATE KEY-----", "")
+        .replace("-----END PRIVATE KEY-----", "")
+        .replace("\r", "")
+        .replace("\n", "")
+        .replace(" ", "")
+    )
+
+
 def build_snowflake_options(args):
+    secret_scope = read_arg(args, "--snowflake_secret_scope", required=False)
+
     sf_url = read_config_value(
         env_name="SNOWFLAKE_URL",
         secret_scope=secret_scope,
@@ -78,10 +91,10 @@ def build_snowflake_options(args):
         secret_key="user",
     )
 
-    sf_password = read_config_value(
-        env_name="SNOWFLAKE_PASSWORD",
+    sf_private_key = read_config_value(
+        env_name="SNOWFLAKE_PRIVATE_KEY",
         secret_scope=secret_scope,
-        secret_key="password",
+        secret_key="private_key",
     )
 
     sf_role = read_config_value(
@@ -99,7 +112,7 @@ def build_snowflake_options(args):
     return {
         "sfURL": sf_url,
         "sfUser": sf_user,
-        "sfPassword": sf_password,
+        "pem_private_key": normalize_private_key(sf_private_key),
         "sfRole": sf_role,
         "sfWarehouse": sf_warehouse,
     }

@@ -24,6 +24,7 @@ jobs:
       - name: Verify Snowflake SQL artifacts exist
         run: |
           test -f snowflake/sql/current_league_status.sql
+          test -f snowflake/sql/staging_foundation.sql
 
       - name: Verify Snowflake docs exist
         run: |
